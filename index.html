@@ -145,6 +145,15 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .e-edit-hit:hover{fill:var(--sel-soft)}
 .cota-ed{position:fixed;z-index:25;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:6px;max-width:calc(100% - 16px)}
 .cota-ed label{font-size:12px;color:var(--ink2)}
+.cota-ed p{max-width:260px}
+.rcard{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--panel);margin-bottom:12px;scroll-margin-top:8px}
+.rcard.sel{border-color:var(--sel);box-shadow:0 0 0 2px var(--sel-soft)}
+.rcard h3{margin:0;font-family:var(--f-disp);font-size:18px;font-weight:600}
+.rcard .elev{margin:8px 0}
+.rlv{display:flex;flex-direction:column;gap:8px}
+.rlv-t{display:flex;flex-direction:column;gap:4px}
+.rlv-i{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)}
+.rlv-i input{width:72px}
 .cota-ed input{width:90px}
 .e-drag{fill:var(--sel)!important}
 .e-dragt{font-family:var(--f-mono);font-weight:600;fill:var(--sel);paint-order:stroke;stroke:var(--paper);stroke-width:.12}
@@ -695,7 +704,7 @@ function drawParams(){
 function elevModuleSVG(s0, m, T, sx, opts={}){ // dibuja un módulo en coordenadas (X = s, Y = -z)
   const p = L.params; let s = '';
   const x0 = s0, x1 = s0 + m.w, lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
-  const tag = (l, off) => `data-bt="${esc(m.t)}" data-bi="${l.i}" data-off="${off}"`;
+  const tag = (l, off) => `data-bt="${esc(m.t)}" data-bi="${l.i}" data-off="${off}"${opts.rid?` data-r="${esc(opts.rid)}"`:''}`;
   for (const l of lv){
     if (l.h > 0) s += `<rect class="e-beam" ${tag(l,0)} x="${x0}" y="${-l.h}" width="${m.w}" height="0.12"/>`;
     if (l.k === 'E') s += `<rect class="e-deck" ${tag(l,-0.03)} x="${x0}" y="${-l.h-0.03}" width="${m.w}" height="0.03"/>`;
@@ -727,10 +736,10 @@ function hdimSVG(x0, x1, z, txt, size=0.26, ed=''){
 }
 const fm = v => fmt(v) + ' m';
 // cadena de cotas verticales de un tipo: cada tramo edita la separación con el nivel de abajo
-function levelChain(key, x, size=0.26){
+function levelChain(key, x, size=0.26, rid=''){
   const T = L.tipos[key]; const lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
   let s = '', prev = 0;
-  for (const l of lv){ if (l.h > prev + 0.04) s += vdimSVG(x, prev, l.h, fm(l.h-prev), size, `data-ed="gap" data-t="${esc(key)}" data-bi="${l.i}" data-lo="${prev}" data-v="${+(l.h-prev).toFixed(3)}"`); prev = l.h; }
+  for (const l of lv){ if (l.h > prev + 0.04) s += vdimSVG(x, prev, l.h, fm(l.h-prev), size, `data-ed="gap" data-t="${esc(key)}" data-bi="${l.i}" data-lo="${prev}" data-v="${+(l.h-prev).toFixed(3)}"${rid?` data-r="${esc(rid)}"`:''}`); prev = l.h; }
   return s;
 }
 function typeCardSVG(key){
@@ -749,15 +758,15 @@ function rackElevationSVG(r){
   const top = Math.max(p.portico, ...r.mods.flatMap(m=>tipo(m.t).niveles.map(l=>l.h+(l.k==='P'?p.palletH:0.3)))) + 0.5;
   let s = `<rect class="e-ground" x="-1.2" y="0" width="${Lr+2.4}" height="0.15"/>`;
   for (let f=0; f<=r.mods.length; f++) s += upright(f===0?0:st[f-1]+r.mods[f-1].w, p.portico);
-  r.mods.forEach((m,i)=>{ s += elevModuleSVG(st[i], m, tipo(m.t));
+  r.mods.forEach((m,i)=>{ s += elevModuleSVG(st[i], m, tipo(m.t), 0, {rid:r.id});
     s += `<text class="e-txt" font-size="0.3" text-anchor="middle" x="${st[i]+m.w/2}" y="0.5" style="${i===selMod?'fill:var(--sel);font-weight:600':''}">${i+1} · ${esc(m.t)}</text>`;
     s += hdimSVG(st[i], st[i]+m.w, -0.95, fm(m.w), 0.24, `data-ed="w" data-r="${esc(r.id)}" data-mi="${i}" data-v="${m.w}"`); });
   s += hdimSVG(0, Lr, -1.45, `Largo total ${fm(Lr)}`, 0.3);
   s += vdimSVG(-1.5, 0, p.portico, 'Bastidor '+fm(p.portico), 0.26, `data-ed="portico" data-v="${p.portico}"`);
-  s += levelChain(r.mods[0].t, -0.6, 0.24);
+  s += levelChain(r.mods[0].t, -0.6, 0.24, r.id);
   // cadena de alturas de cada tipo distinto, arriba de su primer módulo
   const vistos = new Set([r.mods[0].t]);
-  r.mods.forEach((m,i)=>{ if (vistos.has(m.t)) return; vistos.add(m.t); s += levelChain(m.t, st[i]+0.32, 0.22); });
+  r.mods.forEach((m,i)=>{ if (vistos.has(m.t)) return; vistos.add(m.t); s += levelChain(m.t, st[i]+0.32, 0.22, r.id); });
   const W0 = (Lr+3.2)*sc, H0 = (top+1.7)*sc;
   return `<svg width="${W0}" height="${H0}" viewBox="-2 ${-top} ${Lr+3.2} ${top+1.7}" role="img" aria-label="Alzado frontal de ${esc(r.nombre)}">${s}</svg>`;
 }
@@ -777,7 +786,7 @@ function sectionSVG(r){
       const dir = Math.abs(a-90)<1 ? 1 : -1;
       // frente del rack visto en el corte: posición y = q.y + dir*s
       for (let f=0; f<=q.mods.length; f++){ const sf = f===0?0:st[f-1]+q.mods[f-1].w; const y = q.y + dir*sf; s += upright(dir>0?y:y-F, p.portico); }
-      q.mods.forEach((m,i)=>{ const y0 = q.y + dir*st[i]; const xx = dir>0 ? y0 : y0 - m.w; s += elevModuleSVG(xx, m, tipo(m.t));
+      q.mods.forEach((m,i)=>{ const y0 = q.y + dir*st[i]; const xx = dir>0 ? y0 : y0 - m.w; s += elevModuleSVG(xx, m, tipo(m.t), 0, {rid:q.id});
         for (const l of tipo(m.t).niveles) maxTop = Math.max(maxTop, l.h + (l.k==='P'?p.palletH:0)); });
       const lbl = q.y + dir*Lr/2; s += `<text class="s-lbl" font-size="0.5" text-anchor="middle" x="${lbl}" y="0.8">${esc(q.id)}</text>`;
       s += hdimSVG(Math.min(q.y, q.y+dir*Lr), Math.max(q.y, q.y+dir*Lr), -1.25, `${fmt(Lr)}`, 0.3);
@@ -807,7 +816,20 @@ function sectionSVG(r){
 }
 function drawAlzados(){
   const el = $('#alzBody'), r = L.racks.find(x=>x.id===sel), ed = editable();
-  let h = `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Tocá cualquier cota azul para escribir la medida en metros</b> (separación entre largueros, ancho de módulo, bastidor, alero), o <b>arrastrá un larguero naranja</b> hacia arriba o abajo (de a 5 cm; con Shift, de a 1 cm). Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
+  // ---- alzado de cada rack: lo que se cambia acá afecta SOLO a ese rack ----
+  let h = `<h3 class="sec-title">Alzado de cada rack</h3><p class="muted" style="margin:0 0 8px">Cada rack tiene su propio alzado. <b>Lo que cambies acá vale solo para ese rack</b>: tocá una cota azul y escribí la medida en metros, arrastrá un larguero naranja o escribí la altura abajo de cada dibujo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p>`;
+  h += `<div class="chips" style="margin:0 0 10px">${L.racks.map(q=>`<button class="chip ${q.id===sel?'sel':''}" data-goto="${esc(q.id)}">${esc(q.id)}<small>${q.mods.length} mód.</small></button>`).join('')}</div>`;
+  for (const q of L.racks){
+    const s = rackStats(q); const tipos = [...new Set(q.mods.map(m=>m.t))];
+    h += `<div class="rcard ${q.id===sel?'sel':''}" id="rk-${esc(q.id)}"><div class="row" style="justify-content:space-between"><h3>${esc(q.id)} · ${esc(q.nombre)}</h3><span class="muted">${q.doble?'Doble':'Simple'} · ${q.mods.length} módulos · ${fm(s.largo)} · ${s.pos} posiciones</span></div>`;
+    h += `<div class="elev">${rackElevationSVG(q)}</div><div class="rlv">`;
+    for (const k of tipos){ const T = tipo(k); const n = q.mods.filter(m=>m.t===k).length;
+      h += `<div class="rlv-t"><div><b>${esc(k)}</b> <span class="muted">${esc(T.nombre)} · ${n} mód.</span></div><div class="row">`+
+        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<label class="rlv-i"><span>${l.h===0?'Piso':l.k==='P'?'Pallet':'Estante'}</span><input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span></label>`).join('')+
+        `</div></div>`; }
+    h += `</div></div>`;
+  }
+  h += `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Tocá cualquier cota azul para escribir la medida en metros</b> (separación entre largueros, ancho de módulo, bastidor, alero), o <b>arrastrá un larguero naranja</b> hacia arriba o abajo (de a 5 cm; con Shift, de a 1 cm). Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
   for (const [k,T] of Object.entries(L.tipos)){
     const used = L.racks.reduce((s,r)=>s + r.mods.filter(m=>m.t===k).length*(r.doble?2:1), 0);
     h += `<div class="tcard"><h3>${esc(k)} · ${esc(T.nombre)}</h3><div class="muted">${used} módulos en este plano${T.tunel?` · túnel de ${T.tunel==='pasillo'?'paso entre pasillos':'portón'}`:''}</div>${typeCardSVG(k)}`;
@@ -817,12 +839,13 @@ function drawAlzados(){
   }
   h += `</div>`;
   if (ed) h += `<div class="row" style="margin-top:10px"><button class="btn" id="bNewType">+ Nuevo tipo (copia del Estándar)</button></div>`;
-  h += `<h3 class="sec-title">Alzado frontal ${r?'· '+esc(r.nombre):''}</h3>`;
-  h += r ? `<div class="elev">${rackElevationSVG(r)}</div>` : `<p class="muted">Elegí un rack en la planta para ver su alzado completo, módulo por módulo.</p>`;
   h += `<h3 class="sec-title">Corte transversal del galpón</h3>`;
   if (r && [90,270].some(a=>Math.abs(((r.ang%360)+360)%360 - a) < 1)) h += `<p class="muted" style="margin:0 0 8px">Corte Sur–Norte por el eje de ${esc(r.nombre)} (x = ${fmt(centroid(foot(r))[0])} m). Alero y techo estimados.</p><div class="elev">${sectionSVG(r)}</div>`;
   else h += `<p class="muted">Elegí una fila perpendicular al muro Sur (por ejemplo F5) para ver el corte con el rack de muro, la fila y el techo.</p>`;
   el.innerHTML = h;
+  el.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ sel=b.dataset.goto; selMod=-1; refreshSide(); drawAlzados(); const c=document.getElementById('rk-'+sel); if (c) c.scrollIntoView({block:'start'}); });
+  el.querySelectorAll('input[data-lr]').forEach(i=>i.onchange=()=>{ const v=parseFloat(String(i.value).replace(',','.')); if (isNaN(v)||v<0) return;
+    ensureEditable(); commit(); const key = ownType(i.dataset.lr, i.dataset.lt); L.tipos[key].niveles[+i.dataset.li].h = +v.toFixed(3); saved(); });
   el.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{ const v = i.dataset.f==='h' ? parseFloat(i.value) : i.value;
     if (i.dataset.f==='h' && (isNaN(v) || v<0)) return; setNivel(i.dataset.t, +i.dataset.i, i.dataset.f, v); });
   if (!ed) return;
@@ -839,6 +862,16 @@ function ensureEditable(){
   const s=sel, sm=selMod; dupLayout(); sel=s; selMod=sm; refreshAll();
   toast(`Se creó «${L.nombre}» para no tocar lo instalado. Tus cambios quedan ahí.`); return true;
 }
+// Devuelve un tipo exclusivo del rack: si el tipo lo usan otros racks, lo copia (ej. S → S-F5) y se lo asigna solo a este rack.
+function ownType(rid, key){
+  const r = L.racks.find(x=>x.id===rid); if (!r) return key;
+  if (L.racks.every(q => q===r || !q.mods.some(m=>m.t===key))) return key;
+  let nk = `${key}-${rid}`, n = 2; while (L.tipos[nk]) nk = `${key}-${rid}-${n++}`;
+  const T = tipo(key); L.tipos[nk] = {...clone(T), nombre: `${T.nombre} (solo ${rid})`};
+  r.mods.forEach(m => { if (m.t===key) m.t = nk; });
+  toast(`${r.nombre} ahora tiene sus propias alturas (tipo ${nk}); los demás racks no cambian.`);
+  return nk;
+}
 function setNivel(key, i, campo, v){
   ensureEditable(); const T=L.tipos[key]; if (!T || !T.niveles[i]) return;
   commit(); if (campo==='h') T.niveles[i].h = +(+v).toFixed(3); else T.niveles[i].k = v; saved();
@@ -851,7 +884,7 @@ $('#alzBody').addEventListener('pointerdown', ev => {
   const k = t.dataset.bt, i = +t.dataset.bi;
   const svgEl = t.ownerSVGElement; if (!svgEl || !L.tipos[k]) return;
   const ctm = svgEl.getScreenCTM(); const lv = L.tipos[k].niveles[i];
-  bdrag = {k, i, svgEl, idx, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
+  bdrag = {k, sk:k, rid:t.dataset.r||'', i, svgEl, idx, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
   body.setPointerCapture(ev.pointerId);
 });
 $('#alzBody').addEventListener('pointermove', ev => {
@@ -862,8 +895,10 @@ $('#alzBody').addEventListener('pointermove', ev => {
   const body = $('#alzBody');
   if (!bdrag.moved){ bdrag.moved = true;
     if (!editable()){ ensureEditable(); bdrag.svgEl = body.querySelectorAll('svg')[bdrag.idx] || bdrag.svgEl; } // se redibuja: tomar el SVG nuevo
-    body.querySelectorAll(`.e-beam[data-bt="${CSS.escape(bdrag.k)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.classList.add('e-drag')); }
-  body.querySelectorAll(`[data-bt="${CSS.escape(bdrag.k)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.setAttribute('y', (-h + (+e.dataset.off)).toFixed(3)));
+    commit(); if (bdrag.rid) bdrag.k = ownType(bdrag.rid, bdrag.sk); // en el alzado de un rack: solo ese rack
+    bdrag.scope = bdrag.rid ? bdrag.svgEl : body;
+    bdrag.scope.querySelectorAll(`.e-beam[data-bt="${CSS.escape(bdrag.sk)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.classList.add('e-drag')); }
+  bdrag.scope.querySelectorAll(`[data-bt="${CSS.escape(bdrag.sk)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.setAttribute('y', (-h + (+e.dataset.off)).toFixed(3)));
   let lab = bdrag.svgEl.querySelector('.e-dragt');
   if (!lab){ lab = document.createElementNS('http://www.w3.org/2000/svg','text'); lab.setAttribute('class','e-dragt'); lab.setAttribute('font-size','0.34'); bdrag.svgEl.appendChild(lab); }
   const pt0 = bdrag.svgEl.createSVGPoint(); pt0.x = ev.clientX; pt0.y = ev.clientY; const p = pt0.matrixTransform(bdrag.svgEl.getScreenCTM().inverse());
@@ -871,7 +906,7 @@ $('#alzBody').addEventListener('pointermove', ev => {
 });
 function endBeamDrag(){
   if (!bdrag) return; const b = bdrag; bdrag = null;
-  if (b.moved) setNivel(b.k, b.i, 'h', b.h); else drawAlzados();
+  if (b.moved){ const T = L.tipos[b.k]; if (T && T.niveles[b.i]) T.niveles[b.i].h = +b.h.toFixed(3); saved(); } else drawAlzados();
 }
 /* ---- cotas editables: tocar una medida y escribirla en metros ---- */
 $('#alzBody').addEventListener('click', ev => {
@@ -884,7 +919,7 @@ function abrirEditorCota(t, cx, cy){
   const nombres = {gap:'Separación con el nivel de abajo', w:'Ancho del módulo (largo del larguero)', portico:'Altura del bastidor', alero:'Altura del alero', flecha:'Flecha del techo'};
   const box = document.createElement('div'); box.id = 'cotaEd'; box.className = 'cota-ed';
   box.innerHTML = `<label for="cotaInp">${nombres[d.ed]||'Medida'}</label><div class="row"><input type="number" id="cotaInp" step="0.01" min="0.05" value="${d.v}"><span>m</span><button class="btn pri" id="cotaOk">Aplicar</button></div>`+
-    (d.ed==='gap' ? `<p class="muted" style="margin:4px 0 0">Los niveles de arriba se corren junto con este.</p>` : '');
+    (d.ed==='gap' ? `<p class="muted" style="margin:4px 0 0">Los niveles de arriba se corren junto con este.${d.r?` Solo cambia ${esc(d.r)}.`:' Cambia todos los módulos de este tipo.'}</p>` : '');
   document.body.appendChild(box);
   const bw = box.offsetWidth, bh = box.offsetHeight;
   box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, cx + 10)) + 'px';
@@ -901,7 +936,8 @@ function aplicarCota(d, v){
   v = +v.toFixed(3);
   ensureEditable(); commit();
   if (d.ed === 'gap'){
-    const T = L.tipos[d.t]; if (!T) return; const lv = T.niveles; const hi = lv[+d.bi].h; const delta = (+d.lo + v) - hi;
+    const key = d.r ? ownType(d.r, d.t) : d.t;
+    const T = L.tipos[key]; if (!T) return; const lv = T.niveles; const hi = lv[+d.bi].h; const delta = (+d.lo + v) - hi;
     lv.forEach(l => { if (l.h >= hi - 1e-9) l.h = +(l.h + delta).toFixed(3); });
   } else if (d.ed === 'w'){
     const r = L.racks.find(x=>x.id===d.r); if (!r || !r.mods[+d.mi]) return; r.mods[+d.mi].w = v;
@@ -1117,7 +1153,7 @@ function setTab(t){
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
   for (const k of ['planta','alzados','tres','listado']) $('#p-'+k).hidden = k!==t;
   if (t==='planta'){ vbApply(); drawPlanta(); }
-  if (t==='alzados') drawAlzados();
+  if (t==='alzados'){ drawAlzados(); const c = sel && document.getElementById('rk-'+sel); if (c) c.scrollIntoView({block:'start'}); }
   if (t==='listado') drawListado();
   if (t==='tres'){ if (typeof THREE === 'undefined'){ $('#v3d').innerHTML = '<p class="muted" style="padding:16px">No se pudo cargar el motor 3D (sin conexión a internet).</p>'; return; } init3D(); resize3D(); build3D(); }
 }
