@@ -152,6 +152,8 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .rcard.sel{border-color:var(--sel);box-shadow:0 0 0 2px var(--sel-soft)}
 .rcard h3{margin:0;font-family:var(--f-disp);font-size:18px;font-weight:600}
 .rcard .elev{margin:8px 0}
+.cara-blk{border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;scroll-margin-top:8px}
+.cara-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cara-tag{display:inline-block;background:var(--yellow);color:var(--tag-ink);border-radius:5px;padding:0 7px;font-size:15px;margin-left:6px;vertical-align:2px}
 .chip .cara-mini{font-size:10px;color:var(--ink);background:var(--yellow);border-radius:3px;padding:0 3px;margin-top:2px;color:var(--tag-ink)}
 .rlv{display:flex;flex-direction:column;gap:8px}
@@ -344,6 +346,7 @@ for (const v of store.versions) for (const r of (v.racks||[])) if (!Array.isArra
 }
 let L = null;                // plano activo
 let sel = null, selMod = -1; // rack y módulo elegidos
+let selCara = 0;             // cara elegida (0 = AX/Este, 1 = AY/Oeste en las filas dobles)
 let undoStack = [];
 let showDims = true, showPal = true, measuring = false, meas = [];
 function layoutById(id){ return BASES[id] || store.versions.find(v=>v.id===id) || null; }
@@ -376,6 +379,15 @@ const sidesOf = r => r.doble ? [0, D+G] : [0];
 function modStarts(r){ const a=[]; let s=F; for (const m of r.mods){ a.push(s); s += m.w + F; } return a; }
 const palPer = m => m.w >= 1.9 ? 2 : 1;
 const tipo = t => L.tipos[t] || {nombre:t, tunel:null, niveles:[]};
+// Tipo de un módulo en una cara: la cara 1 (Oeste) puede tener su propio tipo (m.t2); si no, usa el mismo que la cara 0
+const modT = (m, k=0) => (k===1 && m.t2) ? m.t2 : m.t;
+function setModT(m, k, key, doble=true){
+  if (k===1) m.t2 = key;
+  else { if (doble && m.t2===undefined) m.t2 = m.t; m.t = key; } // la otra cara conserva su tipo
+  if (!doble || m.t2===m.t) delete m.t2;
+}
+const tiposRack = r => [...new Set(r.mods.flatMap(m => sidesOf(r).map((_,k)=>modT(m,k))))];
+const usaTipo = (r, key) => r.mods.some(m => sidesOf(r).some((_,k)=>modT(m,k)===key));
 const cara = (r, k) => (r.caras && r.caras[k]) || '';
 const carasTxt = r => sidesOf(r).map((_,k)=>cara(r,k)).filter(Boolean).join(' / ');
 function caraDir(r, k){ // hacia dónde mira la cara (lado del pasillo)
@@ -405,16 +417,16 @@ function northY(x){ // borde superior del galpón en x
 /* ================= Cálculos ================= */
 function rackStats(r){
   const st = {pos:0, est:0, mods:r.mods.length, largo:runLen(r), bast:(r.mods.length+1)*(r.doble?2:1), larg:{}, tabl:{}, porTipo:{}};
-  const k = r.doble ? 2 : 1;
-  for (const m of r.mods){
-    const T = tipo(m.t);
-    st.porTipo[m.t] = (st.porTipo[m.t]||0) + k;
+  const k = 1; // se cuenta cara por cara
+  for (const m of r.mods) sidesOf(r).forEach((_,f)=>{
+    const key = modT(m,f), T = tipo(key);
+    st.porTipo[key] = (st.porTipo[key]||0) + k;
     for (const lv of T.niveles){
       if (lv.k==='P') st.pos += palPer(m)*k;
       if (lv.k==='E'){ st.est += m.w*D*k; st.tabl[m.w] = (st.tabl[m.w]||0) + k; }
       if (lv.h > 0) st.larg[m.w] = (st.larg[m.w]||0) + 2*k;
     }
-  }
+  });
   return st;
 }
 function totals(lay){
@@ -462,7 +474,7 @@ function avisos(){
   }
   for (const g of gaps()) if (g.g < p.pasilloMin) A.push({lvl:'warn', rack:R[g.i].id, t:`Pasillo de ${fmt(g.g)} m entre ${R[g.i].nombre} y ${R[g.j].nombre} (mínimo ${fmt(p.pasilloMin)} m).`});
   for (const [key,T] of Object.entries(L.tipos)){
-    if (!L.racks.some(r=>r.mods.some(m=>m.t===key))) continue;
+    if (!L.racks.some(r=>usaTipo(r,key))) continue;
     const lv = [...T.niveles].sort((a,b)=>a.h-b.h);
     for (let i=0;i<lv.length-1;i++){
       const ph = lv[i].h===0 ? (p.palletPiso||p.palletH) : p.palletH;
@@ -530,12 +542,12 @@ function drawPlanta(){
     const Lr=runLen(r), Dt=depth(r), st=modStarts(r), isSel = r.id===sel;
     s += `<g data-rack="${esc(r.id)}">`;
     s += `<polygon class="s-foot ${isSel?'sel':''} ${bad.has(r.id)?'bad':''}" points="${foot(r).map(pt).join(' ')}"/>`;
-    for (const sd of sidesOf(r)){
+    for (const [kf, sd] of sidesOf(r).entries()){
       r.mods.forEach((m,mi)=>{
-        const T=tipo(m.t), s0=st[mi], s1=s0+m.w;
+        const key=modT(m,kf), T=tipo(key), s0=st[mi], s1=s0+m.w;
         if (T.tunel){ s += `<polygon class="${T.tunel==='pasillo'?'s-arrR':'s-arrV'}" points="${arrowLocal(r,s0,s1,sd+0.08,sd+D-0.08)}"/>`; }
-        else if (showPal){ const k=palPer(m), pw=Math.min(1.0,(m.w-0.1)/k); for (let q=0;q<k;q++){ const c=s0+m.w*(q+0.5)/k; s += `<polygon class="${m.t==='A'?'s-palA':'s-pal'}" points="${lpoly(r,[[c-pw/2,sd+0.03],[c+pw/2,sd+0.03],[c+pw/2,sd+D-0.03],[c-pw/2,sd+D-0.03]])}"/>`; } }
-        if (isSel && mi===selMod) s += `<polygon style="fill:none;stroke:var(--sel);stroke-width:.12" points="${lpoly(r,[[s0,0],[s1,0],[s1,Dt],[s0,Dt]])}"/>`;
+        else if (showPal){ const k=palPer(m), pw=Math.min(1.0,(m.w-0.1)/k); for (let q=0;q<k;q++){ const c=s0+m.w*(q+0.5)/k; s += `<polygon class="${key.startsWith('A')?'s-palA':'s-pal'}" points="${lpoly(r,[[c-pw/2,sd+0.03],[c+pw/2,sd+0.03],[c+pw/2,sd+D-0.03],[c-pw/2,sd+D-0.03]])}"/>`; } }
+        if (isSel && mi===selMod && kf===selCara) s += `<polygon style="fill:none;stroke:var(--sel);stroke-width:.12" points="${lpoly(r,[[s0,sd],[s1,sd],[s1,sd+D],[s0,sd+D]])}"/>`;
       });
       for (let f=0; f<=r.mods.length; f++){ const sf=(f===0?0:st[f-1]+r.mods[f-1].w)+F/2; const a=W(r,sf,sd+0.05), b=W(r,sf,sd+D-0.05); s += `<line class="s-frame" x1="${a[0]}" y1="${-a[1]}" x2="${b[0]}" y2="${-b[1]}"/>`; }
     }
@@ -584,7 +596,8 @@ svg.addEventListener('pointerdown', ev => {
     const id = g.getAttribute('data-rack');
     if (sel !== id){ sel = id; selMod = -1; refreshSide(); }
     // módulo bajo el cursor
-    const r = L.racks.find(x=>x.id===id); const {u} = uv(r); const sAlong=(w[0]-r.x)*u[0]+(w[1]-r.y)*u[1];
+    const r = L.racks.find(x=>x.id===id); const {u, n:nv} = uv(r); const sAlong=(w[0]-r.x)*u[0]+(w[1]-r.y)*u[1];
+    const dAcross=(w[0]-r.x)*nv[0]+(w[1]-r.y)*nv[1]; selCara = r.doble && dAcross > D + G/2 ? 1 : 0;
     const st = modStarts(r); selMod = st.findIndex((s0,i)=> sAlong>=s0-F/2 && sAlong<=s0+r.mods[i].w+F/2);
     refreshSide(); drawPlanta();
     if (editable()){ drag = {mode:'rack', id, start:w, ox:r.x, oy:r.y, moved:false}; svg.setPointerCapture(ev.pointerId); svg.classList.add('dragging'); }
@@ -659,8 +672,12 @@ function drawEditor(){
     return;
   }
   const ed = editable(), dis = ed ? '' : 'disabled', s = rackStats(r);
-  const chips = r.mods.map((m,i)=>{ const T=tipo(m.t); return `<button class="chip ${T.tunel?'t-'+T.tunel:''} ${i===selMod?'sel':''}" data-mi="${i}" title="${esc(T.nombre)}">${esc(m.t)}<small>${fmt(m.w,1)}</small></button>`; }).join('');
+  if (!r.doble) selCara = 0;
+  const kc = selCara, cn = cara(r,kc) || caraDir(r,kc);
+  const chips = r.mods.map((m,i)=>{ const key=modT(m,kc), T=tipo(key); return `<button class="chip ${T.tunel?'t-'+T.tunel:''} ${i===selMod?'sel':''}" data-mi="${i}" title="${esc(T.nombre)}">${esc(key)}<small>${fmt(m.w,1)}</small></button>`; }).join('');
   const m = r.mods[selMod];
+  const mk = m ? modT(m,kc) : '';
+  const caraBtns = r.doble ? `<div class="row" style="margin-top:10px"><span class="muted">Editando la cara</span>${sidesOf(r).map((_,k)=>`<button class="btn ${k===kc?'on':''}" data-selcara="${k}">${esc(cara(r,k)||caraDir(r,k))} · ${caraDir(r,k)}</button>`).join('')}</div>` : '';
   el.innerHTML = `<h2>${esc(r.id)} · ${esc(r.nombre)}</h2>
     <div class="grid2">
       <div class="field"><label for="eNom">Nombre</label><input type="text" id="eNom" value="${esc(r.nombre)}" ${dis}></div>
@@ -672,17 +689,19 @@ function drawEditor(){
     </div>
     <div class="row" style="margin-top:8px">${sidesOf(r).map((_,k)=>`<div class="field"><label for="eC${k}">Nomenclatura cara ${caraDir(r,k)}</label><input type="text" id="eC${k}" data-cara="${k}" value="${esc(cara(r,k))}" maxlength="6" style="width:90px;text-transform:uppercase;font-family:var(--f-mono)"></div>`).join('')}</div>
     <p class="muted" style="margin:8px 0 0">${s.pos} posiciones · ${fmt(s.est,1)} m² de estantes · ${s.bast} bastidores</p>
+    ${caraBtns}
     <div class="chips" role="list">${chips}</div>
     ${m ? `<div class="row" style="margin-bottom:6px">
-        <label for="eT">Módulo ${selMod+1}</label><select id="eT" ${dis} style="flex:1">${typeOptions(m.t)}</select>
+        <label for="eT">Módulo ${selMod+1}${r.doble?` · cara ${esc(cn)}`:''}</label><select id="eT" ${dis} style="flex:1">${typeOptions(mk)}</select>
         <select id="eW" ${dis} aria-label="Ancho del módulo"><option value="2.3" ${m.w===2.3?'selected':''}>2,30 m</option><option value="1.2" ${m.w===1.2?'selected':''}>1,20 m</option>${[2.3,1.2].includes(m.w)?'':`<option selected value="${m.w}">${fmt(m.w)} m</option>`}</select>
       </div>
-      <div class="row"><button class="btn" id="mL" ${dis}>◀ Mover</button><button class="btn" id="mR" ${dis}>Mover ▶</button><button class="btn" id="mIns" ${dis}>Duplicar</button><button class="btn danger" id="mDel" ${dis}>Quitar</button></div>`
+      <div class="row"><button class="btn" id="mL" ${dis}>◀ Mover</button><button class="btn" id="mR" ${dis}>Mover ▶</button><button class="btn" id="mIns" ${dis}>Duplicar</button><button class="btn danger" id="mDel" ${dis}>Quitar</button>${r.doble?`<button class="btn" id="mCopy" ${dis} title="Pone en la otra cara el mismo tipo de este módulo">Igualar la otra cara</button>`:''}</div>
+      ${r.doble?`<p class="muted" style="margin:6px 0 0">El tipo se cambia solo en la cara ${esc(cn)}. El ancho y la posición del módulo son de las dos caras (comparten bastidores).</p>`:''}`
       : `<p class="muted" style="margin:0 0 6px">Elegí un módulo para cambiar su tipo, su ancho o la altura de sus largueros.</p>`}
-    ${m ? (()=>{ const T=tipo(m.t); const n=L.racks.reduce((s,q)=>s+q.mods.filter(x=>x.t===m.t).length,0);
-      return `<div class="lvbox"><div class="muted" style="margin-bottom:4px"><b>Altura de los largueros naranjas</b> · tipo ${esc(m.t)}, cambia los ${n} módulos de ese tipo</div>`+
-        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>b.h-a.h).map(l=>`<div class="lv"><span>${l.h===0?'Piso':l.k==='P'?'Pallets':'Estante'}</span><input type="number" step="0.05" min="0" data-lt="${esc(m.t)}" data-li="${l.i}" value="${l.h}" ${l.h===0?'disabled':''} aria-label="Altura del nivel en metros"><span>m</span></div>`).join('')+
-        `<div class="row" style="margin-top:8px"><button class="btn" id="mSolo">Cambiar solo este módulo</button></div></div>`; })() : ''}
+    ${m ? (()=>{ const T=tipo(mk); const n=L.racks.reduce((s,q)=>s+q.mods.reduce((a,x)=>a+sidesOf(q).filter((_,f)=>modT(x,f)===mk).length,0),0);
+      return `<div class="lvbox"><div class="muted" style="margin-bottom:4px"><b>Altura de los largueros naranjas</b> · tipo ${esc(mk)}, cambia los ${n} módulos (caras) de ese tipo</div>`+
+        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>b.h-a.h).map(l=>`<div class="lv"><span>${l.h===0?'Piso':l.k==='P'?'Pallets':'Estante'}</span><input type="number" step="0.05" min="0" data-lt="${esc(mk)}" data-li="${l.i}" value="${l.h}" ${l.h===0?'disabled':''} aria-label="Altura del nivel en metros"><span>m</span></div>`).join('')+
+        `<div class="row" style="margin-top:8px"><button class="btn" id="mSolo">Cambiar solo este módulo${r.doble?` (cara ${esc(cn)})`:''}</button></div></div>`; })() : ''}
     ${ed ? `<div class="row" style="margin-top:10px"><button class="btn" id="rAdd">+ Módulo al final</button><button class="btn" id="rRot">Girar 90°</button><button class="btn" id="rDup">Duplicar rack</button><span id="rDelW"><button class="btn danger" id="rDel">Borrar rack</button></span></div>` : ''}`;
   el.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ selMod=+b.dataset.mi; drawEditor(); drawPlanta(); if (store.tab==='alzados') drawAlzados(); });
   el.querySelectorAll('[data-cara]').forEach(i=>i.onchange=()=>{ const v = i.value.trim().toUpperCase(); const k = +i.dataset.cara;
@@ -693,15 +712,18 @@ function drawEditor(){
   el.querySelectorAll('[data-lt]').forEach(i=>i.onchange=()=>{ const v=parseFloat(i.value); if (isNaN(v)||v<0) return; setNivel(i.dataset.lt, +i.dataset.li, 'h', v); });
   const solo = el.querySelector('#mSolo');
   if (solo) solo.onclick = () => { ensureEditable(); const rr=L.racks.find(x=>x.id===sel), mm=rr && rr.mods[selMod]; if (!mm) return; commit();
-    let n=2; while (L.tipos[mm.t+n]) n++; const key=mm.t+n; L.tipos[key] = {...clone(tipo(mm.t)), nombre: tipo(mm.t).nombre+` (${rr.id} mód. ${selMod+1})`}; mm.t = key; saved();
-    toast(`El módulo ${selMod+1} de ${rr.nombre} ahora es el tipo ${key}: sus alturas se cambian sin tocar los demás.`); };
+    const old = modT(mm, kc); let n=2; while (L.tipos[old+n]) n++; const key=old+n; const cc = cara(rr,kc);
+    L.tipos[key] = {...clone(tipo(old)), nombre: tipo(old).nombre+` (${cc||rr.id} mód. ${selMod+1})`}; setModT(mm, kc, key, rr.doble); saved();
+    toast(`El módulo ${selMod+1} de ${cc||rr.nombre} ahora es el tipo ${key}: sus alturas se cambian sin tocar los demás.`); };
+  el.querySelectorAll('[data-selcara]').forEach(b=>b.onclick=()=>{ selCara=+b.dataset.selcara; drawEditor(); drawPlanta(); if (store.tab==='alzados') drawAlzados(); });
   if (!ed) return;
   const num = (id, f) => { const i=el.querySelector(id); i.onchange=()=>{ const v=parseFloat(i.value); if (isNaN(v)) return; commit(); f(v); saved(); }; };
   el.querySelector('#eNom').onchange = e => { commit(); r.nombre = e.target.value.trim() || r.id; saved(); };
   num('#eX', v=>r.x=v); num('#eY', v=>r.y=v); num('#eA', v=>r.ang=((v%360)+360)%360);
   el.querySelector('#eD').onchange = e => { commit(); r.doble = e.target.value==='1'; saved(); };
   if (m){
-    el.querySelector('#eT').onchange = e => { commit(); m.t = e.target.value; saved(); };
+    el.querySelector('#eT').onchange = e => { commit(); setModT(m, kc, e.target.value, r.doble); saved(); };
+    const cp = el.querySelector('#mCopy'); if (cp) cp.onclick = () => { commit(); setModT(m, 1-kc, modT(m,kc)); saved(); toast('Las dos caras de este módulo quedaron con el mismo tipo.'); };
     el.querySelector('#eW').onchange = e => { commit(); m.w = parseFloat(e.target.value); saved(); };
     el.querySelector('#mL').onclick = () => { if (selMod<1) return; commit(); [r.mods[selMod-1],r.mods[selMod]]=[r.mods[selMod],r.mods[selMod-1]]; selMod--; saved(); };
     el.querySelector('#mR').onclick = () => { if (selMod>=r.mods.length-1) return; commit(); [r.mods[selMod+1],r.mods[selMod]]=[r.mods[selMod],r.mods[selMod+1]]; selMod++; saved(); };
@@ -737,7 +759,7 @@ function drawParams(){
 function elevModuleSVG(s0, m, T, sx, opts={}){ // dibuja un módulo en coordenadas (X = s, Y = -z)
   const p = L.params; let s = '';
   const x0 = s0, x1 = s0 + m.w, lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
-  const tag = (l, off) => `data-bt="${esc(m.t)}" data-bi="${l.i}" data-off="${off}"${opts.rid?` data-r="${esc(opts.rid)}"`:''}`;
+  const tag = (l, off) => `data-bt="${esc(opts.key || m.t)}" data-bi="${l.i}" data-off="${off}"${opts.rid?` data-r="${esc(opts.rid)}" data-k="${opts.k||0}"`:''}`;
   for (const l of lv){
     if (l.h > 0) s += `<rect class="e-beam" ${tag(l,0)} x="${x0}" y="${-l.h}" width="${m.w}" height="0.12"/>`;
     if (l.k === 'E') s += `<rect class="e-deck" ${tag(l,-0.03)} x="${x0}" y="${-l.h-0.03}" width="${m.w}" height="0.03"/>`;
@@ -769,10 +791,10 @@ function hdimSVG(x0, x1, z, txt, size=0.26, ed=''){
 }
 const fm = v => fmt(v) + ' m';
 // cadena de cotas verticales de un tipo: cada tramo edita la separación con el nivel de abajo
-function levelChain(key, x, size=0.26, rid=''){
+function levelChain(key, x, size=0.26, rid='', k=0){
   const T = L.tipos[key]; const lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
   let s = '', prev = 0;
-  for (const l of lv){ if (l.h > prev + 0.04) s += vdimSVG(x, prev, l.h, fm(l.h-prev), size, `data-ed="gap" data-t="${esc(key)}" data-bi="${l.i}" data-lo="${prev}" data-v="${+(l.h-prev).toFixed(3)}"${rid?` data-r="${esc(rid)}"`:''}`); prev = l.h; }
+  for (const l of lv){ if (l.h > prev + 0.04) s += vdimSVG(x, prev, l.h, fm(l.h-prev), size, `data-ed="gap" data-t="${esc(key)}" data-bi="${l.i}" data-lo="${prev}" data-v="${+(l.h-prev).toFixed(3)}"${rid?` data-r="${esc(rid)}" data-k="${k}"`:''}`); prev = l.h; }
   return s;
 }
 function typeCardSVG(key){
@@ -786,22 +808,22 @@ function typeCardSVG(key){
   s += hdimSVG(F, F+2.3, -0.45, '2,30 m');
   return `<svg viewBox="-1.9 ${-top} ${2.3+2*F+3.6} ${top+0.9}" role="img" aria-label="Alzado del tipo ${esc(T.nombre)}">${s}</svg>`;
 }
-function rackElevationSVG(r){
+function rackElevationSVG(r, k=0){
   const p=L.params, st=modStarts(r), Lr=runLen(r), sc=34;
-  const top = Math.max(p.portico, ...r.mods.flatMap(m=>tipo(m.t).niveles.map(l=>l.h+(l.k==='P'?p.palletH:0.3)))) + 0.5;
+  const top = Math.max(p.portico, ...r.mods.flatMap(m=>tipo(modT(m,k)).niveles.map(l=>l.h+(l.k==='P'?p.palletH:0.3)))) + 0.5;
   let s = `<rect class="e-ground" x="-1.2" y="0" width="${Lr+2.4}" height="0.15"/>`;
   for (let f=0; f<=r.mods.length; f++) s += upright(f===0?0:st[f-1]+r.mods[f-1].w, p.portico);
-  r.mods.forEach((m,i)=>{ s += elevModuleSVG(st[i], m, tipo(m.t), 0, {rid:r.id});
-    s += `<text class="e-txt" font-size="0.3" text-anchor="middle" x="${st[i]+m.w/2}" y="0.5" style="${i===selMod?'fill:var(--sel);font-weight:600':''}">${i+1} · ${esc(m.t)}</text>`;
+  r.mods.forEach((m,i)=>{ const key = modT(m,k); s += elevModuleSVG(st[i], m, tipo(key), 0, {rid:r.id, k, key});
+    s += `<text class="e-txt" font-size="0.3" text-anchor="middle" x="${st[i]+m.w/2}" y="0.5" style="${i===selMod&&k===selCara&&r.id===sel?'fill:var(--sel);font-weight:600':''}">${i+1} · ${esc(key)}</text>`;
     s += hdimSVG(st[i], st[i]+m.w, -0.95, fm(m.w), 0.24, `data-ed="w" data-r="${esc(r.id)}" data-mi="${i}" data-v="${m.w}"`); });
   s += hdimSVG(0, Lr, -1.45, `Largo total ${fm(Lr)}`, 0.3);
   s += vdimSVG(-1.5, 0, p.portico, 'Bastidor '+fm(p.portico), 0.26, `data-ed="portico" data-v="${p.portico}"`);
-  s += levelChain(r.mods[0].t, -0.6, 0.24, r.id);
+  s += levelChain(modT(r.mods[0],k), -0.6, 0.24, r.id, k);
   // cadena de alturas de cada tipo distinto, arriba de su primer módulo
-  const vistos = new Set([r.mods[0].t]);
-  r.mods.forEach((m,i)=>{ if (vistos.has(m.t)) return; vistos.add(m.t); s += levelChain(m.t, st[i]+0.32, 0.22, r.id); });
+  const vistos = new Set([modT(r.mods[0],k)]);
+  r.mods.forEach((m,i)=>{ const key=modT(m,k); if (vistos.has(key)) return; vistos.add(key); s += levelChain(key, st[i]+0.32, 0.22, r.id, k); });
   const W0 = (Lr+3.2)*sc, H0 = (top+1.7)*sc;
-  return `<svg width="${W0}" height="${H0}" viewBox="-2 ${-top} ${Lr+3.2} ${top+1.7}" role="img" aria-label="Alzado frontal de ${esc(r.nombre)}">${s}</svg>`;
+  return `<svg width="${W0}" height="${H0}" viewBox="-2 ${-top} ${Lr+3.2} ${top+1.7}" role="img" aria-label="Alzado de la cara ${esc(cara(r,k)||caraDir(r,k))} de ${esc(r.nombre)}">${s}</svg>`;
 }
 function sectionSVG(r){
   // Corte N-S del galpón por el eje del rack elegido (solo racks a 90°/270°)
@@ -851,20 +873,26 @@ function drawAlzados(){
   const el = $('#alzBody'), r = L.racks.find(x=>x.id===sel), ed = editable();
   // ---- alzado de cada rack: lo que se cambia acá afecta SOLO a ese rack ----
   let h = `<h3 class="sec-title">Alzado de cada rack</h3><p class="muted" style="margin:0 0 8px">Cada rack tiene su propio alzado. <b>Lo que cambies acá vale solo para ese rack</b>: tocá una cota azul y escribí la medida en metros, arrastrá un larguero naranja o escribí la altura abajo de cada dibujo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p>`;
-  h += `<div class="chips" style="margin:0 0 10px">${L.racks.map(q=>`<button class="chip ${q.id===sel?'sel':''}" data-goto="${esc(q.id)}">${esc(q.id)}<small>${q.mods.length} mód.</small>${carasTxt(q)?`<span class="cara-mini">${esc(carasTxt(q))}</span>`:''}</button>`).join('')}</div>`;
+  h += `<div class="chips" style="margin:0 0 10px">${L.racks.flatMap(q=>sidesOf(q).map((_,k)=>`<button class="chip ${q.id===sel&&k===selCara?'sel':''}" data-goto="${esc(q.id)}" data-gk="${k}"><span class="cara-mini" style="font-size:12px">${esc(cara(q,k)||'—')}</span><small>${esc(q.id)} · ${caraDir(q,k)}</small></button>`)).join('')}</div>`;
   for (const q of L.racks){
-    const s = rackStats(q); const tipos = [...new Set(q.mods.map(m=>m.t))];
-    h += `<div class="rcard ${q.id===sel?'sel':''}" id="rk-${esc(q.id)}"><div class="row" style="justify-content:space-between"><h3>${esc(q.id)} · ${esc(q.nombre)}${carasTxt(q)?` <span class="cara-tag">${esc(carasTxt(q))}</span>`:''}</h3><span class="muted">${q.doble?'Doble':'Simple'} · ${q.mods.length} módulos · ${fm(s.largo)} · ${s.pos} posiciones</span></div>`;
-    h += `<div class="elev">${rackElevationSVG(q)}</div><div class="rlv">`;
-    for (const k of tipos){ const T = tipo(k); const n = q.mods.filter(m=>m.t===k).length;
-      h += `<div class="rlv-t"><div><b>${esc(k)}</b> <span class="muted">${esc(T.nombre)} · ${n} mód.</span></div><div class="row">`+
-        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<label class="rlv-i"><span>${l.h===0?'Piso':l.k==='P'?'Pallet':'Estante'}</span><input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span></label>`).join('')+
-        `</div></div>`; }
-    h += `</div></div>`;
+    const s = rackStats(q);
+    h += `<div class="rcard ${q.id===sel?'sel':''}" id="rk-${esc(q.id)}"><div class="row" style="justify-content:space-between"><h3>${esc(q.id)} · ${esc(q.nombre)}</h3><span class="muted">${q.doble?'Doble':'Simple'} · ${q.mods.length} módulos · ${fm(s.largo)} · ${s.pos} posiciones</span></div>`;
+    // un alzado por cara: cada cara se cambia por separado
+    sidesOf(q).forEach((_,kf)=>{
+      const tipos = [...new Set(q.mods.map(m=>modT(m,kf)))];
+      h += `<div class="cara-blk" id="rk-${esc(q.id)}-${kf}"><div class="cara-h"><span class="cara-tag" style="margin:0">${esc(cara(q,kf)||'Sin nombre')}</span> <span class="muted">Cara ${caraDir(q,kf)}${q.doble?' · los cambios de esta cara no tocan la otra':''}</span></div>`;
+      h += `<div class="elev">${rackElevationSVG(q, kf)}</div><div class="rlv">`;
+      for (const k of tipos){ const T = tipo(k); const n = q.mods.filter(m=>modT(m,kf)===k).length;
+        h += `<div class="rlv-t"><div><b>${esc(k)}</b> <span class="muted">${esc(T.nombre)} · ${n} mód.</span></div><div class="row">`+
+          T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<label class="rlv-i"><span>${l.h===0?'Piso':l.k==='P'?'Pallet':'Estante'}</span><input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lk="${kf}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span></label>`).join('')+
+          `</div></div>`; }
+      h += `</div></div>`;
+    });
+    h += `</div>`;
   }
   h += `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Tocá cualquier cota azul para escribir la medida en metros</b> (separación entre largueros, ancho de módulo, bastidor, alero), o <b>arrastrá un larguero naranja</b> hacia arriba o abajo (de a 5 cm; con Shift, de a 1 cm). Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
   for (const [k,T] of Object.entries(L.tipos)){
-    const used = L.racks.reduce((s,r)=>s + r.mods.filter(m=>m.t===k).length*(r.doble?2:1), 0);
+    const used = L.racks.reduce((s,r)=>s + r.mods.reduce((a,m)=>a + sidesOf(r).filter((_,f)=>modT(m,f)===k).length, 0), 0);
     h += `<div class="tcard"><h3>${esc(k)} · ${esc(T.nombre)}</h3><div class="muted">${used} módulos en este plano${T.tunel?` · túnel de ${T.tunel==='pasillo'?'paso entre pasillos':'portón'}`:''}</div>${typeCardSVG(k)}`;
     h += [...T.niveles].map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<div class="lv"><input type="number" step="0.05" data-t="${esc(k)}" data-i="${l.i}" data-f="h" value="${l.h}" aria-label="Altura del nivel"><select data-t="${esc(k)}" data-i="${l.i}" data-f="k" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>P · pallets</option><option value="E" ${l.k==='E'?'selected':''}>E · estante</option></select>${ed?`<button class="btn danger" data-t="${esc(k)}" data-del="${l.i}" aria-label="Quitar nivel">×</button>`:'<span></span>'}</div>`).join('');
     if (ed) h += `<div class="row" style="margin-top:6px"><button class="btn" data-addlv="${esc(k)}">+ Nivel</button></div>`;
@@ -876,9 +904,9 @@ function drawAlzados(){
   if (r && [90,270].some(a=>Math.abs(((r.ang%360)+360)%360 - a) < 1)) h += `<p class="muted" style="margin:0 0 8px">Corte Sur–Norte por el eje de ${esc(r.nombre)} (x = ${fmt(centroid(foot(r))[0])} m). Alero y techo estimados.</p><div class="elev">${sectionSVG(r)}</div>`;
   else h += `<p class="muted">Elegí una fila perpendicular al muro Sur (por ejemplo F5) para ver el corte con el rack de muro, la fila y el techo.</p>`;
   el.innerHTML = h;
-  el.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ sel=b.dataset.goto; selMod=-1; refreshSide(); drawAlzados(); const c=document.getElementById('rk-'+sel); if (c) c.scrollIntoView({block:'start'}); });
+  el.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ sel=b.dataset.goto; selCara=+(b.dataset.gk||0); selMod=-1; refreshSide(); drawAlzados(); const c=document.getElementById(`rk-${sel}-${selCara}`); if (c) c.scrollIntoView({block:'start'}); });
   el.querySelectorAll('input[data-lr]').forEach(i=>i.onchange=()=>{ const v=parseFloat(String(i.value).replace(',','.')); if (isNaN(v)||v<0) return;
-    ensureEditable(); commit(); const key = ownType(i.dataset.lr, i.dataset.lt); L.tipos[key].niveles[+i.dataset.li].h = +v.toFixed(3); saved(); });
+    ensureEditable(); commit(); const key = ownType(i.dataset.lr, i.dataset.lt, +i.dataset.lk||0); L.tipos[key].niveles[+i.dataset.li].h = +v.toFixed(3); saved(); });
   el.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{ const v = i.dataset.f==='h' ? parseFloat(i.value) : i.value;
     if (i.dataset.f==='h' && (isNaN(v) || v<0)) return; setNivel(i.dataset.t, +i.dataset.i, i.dataset.f, v); });
   if (!ed) return;
@@ -896,13 +924,16 @@ function ensureEditable(){
   toast(`Se creó «${L.nombre}» para no tocar lo instalado. Tus cambios quedan ahí.`); return true;
 }
 // Devuelve un tipo exclusivo del rack: si el tipo lo usan otros racks, lo copia (ej. S → S-F5) y se lo asigna solo a este rack.
-function ownType(rid, key){
+// Devuelve un tipo exclusivo de UNA cara de un rack: si el tipo lo usa otra cara (de este u otro rack), lo copia (ej. S → S-AX).
+function ownType(rid, key, k=0){
   const r = L.racks.find(x=>x.id===rid); if (!r) return key;
-  if (L.racks.every(q => q===r || !q.mods.some(m=>m.t===key))) return key;
-  let nk = `${key}-${rid}`, n = 2; while (L.tipos[nk]) nk = `${key}-${rid}-${n++}`;
-  const T = tipo(key); L.tipos[nk] = {...clone(T), nombre: `${T.nombre} (solo ${rid})`};
-  r.mods.forEach(m => { if (m.t===key) m.t = nk; });
-  toast(`${r.nombre} ahora tiene sus propias alturas (tipo ${nk}); los demás racks no cambian.`);
+  const otro = L.racks.some(q => q.mods.some(m => sidesOf(q).some((_,f) => modT(m,f)===key && !(q===r && f===k))));
+  if (!otro) return key;
+  const nom = cara(r,k) || (r.doble ? `${rid}${k?'O':'E'}` : rid);
+  let nk = `${key}-${nom}`, n = 2; while (L.tipos[nk]) nk = `${key}-${nom}-${n++}`;
+  const T = tipo(key); L.tipos[nk] = {...clone(T), nombre: `${T.nombre} (solo ${nom})`};
+  r.mods.forEach(m => { if (modT(m,k)===key) setModT(m, k, nk, r.doble); });
+  toast(`La cara ${nom} ahora tiene sus propias alturas (tipo ${nk}); el resto no cambia.`);
   return nk;
 }
 function setNivel(key, i, campo, v){
@@ -917,7 +948,7 @@ $('#alzBody').addEventListener('pointerdown', ev => {
   const k = t.dataset.bt, i = +t.dataset.bi;
   const svgEl = t.ownerSVGElement; if (!svgEl || !L.tipos[k]) return;
   const ctm = svgEl.getScreenCTM(); const lv = L.tipos[k].niveles[i];
-  bdrag = {k, sk:k, rid:t.dataset.r||'', i, svgEl, idx, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
+  bdrag = {k, sk:k, rid:t.dataset.r||'', kf:+(t.dataset.k||0), i, svgEl, idx, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
   body.setPointerCapture(ev.pointerId);
 });
 $('#alzBody').addEventListener('pointermove', ev => {
@@ -928,7 +959,7 @@ $('#alzBody').addEventListener('pointermove', ev => {
   const body = $('#alzBody');
   if (!bdrag.moved){ bdrag.moved = true;
     if (!editable()){ ensureEditable(); bdrag.svgEl = body.querySelectorAll('svg')[bdrag.idx] || bdrag.svgEl; } // se redibuja: tomar el SVG nuevo
-    commit(); if (bdrag.rid) bdrag.k = ownType(bdrag.rid, bdrag.sk); // en el alzado de un rack: solo ese rack
+    commit(); if (bdrag.rid) bdrag.k = ownType(bdrag.rid, bdrag.sk, bdrag.kf); // en el alzado de un rack: solo ese rack
     bdrag.scope = bdrag.rid ? bdrag.svgEl : body;
     bdrag.scope.querySelectorAll(`.e-beam[data-bt="${CSS.escape(bdrag.sk)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.classList.add('e-drag')); }
   bdrag.scope.querySelectorAll(`[data-bt="${CSS.escape(bdrag.sk)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.setAttribute('y', (-h + (+e.dataset.off)).toFixed(3)));
@@ -952,7 +983,7 @@ function abrirEditorCota(t, cx, cy){
   const nombres = {gap:'Separación con el nivel de abajo', w:'Ancho del módulo (largo del larguero)', portico:'Altura del bastidor', alero:'Altura del alero', flecha:'Flecha del techo'};
   const box = document.createElement('div'); box.id = 'cotaEd'; box.className = 'cota-ed';
   box.innerHTML = `<label for="cotaInp">${nombres[d.ed]||'Medida'}</label><div class="row"><input type="number" id="cotaInp" step="0.01" min="0.05" value="${d.v}"><span>m</span><button class="btn pri" id="cotaOk">Aplicar</button></div>`+
-    (d.ed==='gap' ? `<p class="muted" style="margin:4px 0 0">Los niveles de arriba se corren junto con este.${d.r?` Solo cambia ${esc(d.r)}.`:' Cambia todos los módulos de este tipo.'}</p>` : '');
+    (d.ed==='gap' ? `<p class="muted" style="margin:4px 0 0">Los niveles de arriba se corren junto con este.${d.r?` Solo cambia la cara ${esc(cara(L.racks.find(x=>x.id===d.r)||{},+(d.k||0))||d.r)}.`:' Cambia todos los módulos de este tipo.'}</p>` : d.ed==='w' ? `<p class="muted" style="margin:4px 0 0">El ancho es el mismo en las dos caras (comparten bastidores).</p>` : '');
   document.body.appendChild(box);
   const bw = box.offsetWidth, bh = box.offsetHeight;
   box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, cx + 10)) + 'px';
@@ -969,7 +1000,7 @@ function aplicarCota(d, v){
   v = +v.toFixed(3);
   ensureEditable(); commit();
   if (d.ed === 'gap'){
-    const key = d.r ? ownType(d.r, d.t) : d.t;
+    const key = d.r ? ownType(d.r, d.t, +(d.k||0)) : d.t;
     const T = L.tipos[key]; if (!T) return; const lv = T.niveles; const hi = lv[+d.bi].h; const delta = (+d.lo + v) - hi;
     lv.forEach(l => { if (l.h >= hi - 1e-9) l.h = +(l.h + delta).toFixed(3); });
   } else if (d.ed === 'w'){
@@ -988,7 +1019,7 @@ function drawListado(){
   const dcell = (a,b,d=0) => { if (!diff) return ''; const x=a-b; return `<td class="n" style="color:${x>0?'var(--ok)':x<0?'var(--bad)':'var(--ink2)'}">${x>0?'+':''}${d?fmt(x,d):x}</td>`; };
   let h = `<h3 class="sec-title">Racks</h3><div class="tw"><table><thead><tr><th>Rack</th><th>Nomenclatura</th><th>Nombre</th><th>Prof.</th><th class="n">Módulos</th><th class="n">Largo m</th><th class="n">Posiciones</th><th class="n">Estantes m²</th><th>Composición (de inicio a fin)</th></tr></thead><tbody>`;
   for (const r of L.racks){ const s = rackStats(r);
-    h += `<tr class="click ${r.id===sel?'selr':''}" data-r="${esc(r.id)}"><td><b>${esc(r.id)}</b></td><td>${sidesOf(r).map((_,k)=>cara(r,k)?`<span class="cara-tag" style="margin:0 4px 0 0;font-size:13px" title="Cara ${caraDir(r,k)}">${esc(cara(r,k))}</span>`:'').join('')}</td><td>${esc(r.nombre)}</td><td>${r.doble?'Doble':'Simple'}</td><td class="n">${r.mods.length}</td><td class="n">${fmt(s.largo)}</td><td class="n">${s.pos}</td><td class="n">${fmt(s.est,1)}</td><td style="font-family:var(--f-mono);font-size:12px">${r.mods.map(m=>m.t+(m.w!==2.3?'('+fmt(m.w,1)+')':'')).join(' ')}</td></tr>`; }
+    h += `<tr class="click ${r.id===sel?'selr':''}" data-r="${esc(r.id)}"><td><b>${esc(r.id)}</b></td><td>${sidesOf(r).map((_,k)=>cara(r,k)?`<span class="cara-tag" style="margin:0 4px 0 0;font-size:13px" title="Cara ${caraDir(r,k)}">${esc(cara(r,k))}</span>`:'').join('')}</td><td>${esc(r.nombre)}</td><td>${r.doble?'Doble':'Simple'}</td><td class="n">${r.mods.length}</td><td class="n">${fmt(s.largo)}</td><td class="n">${s.pos}</td><td class="n">${fmt(s.est,1)}</td><td style="font-family:var(--f-mono);font-size:12px">${r.mods.some(m=>m.t2) ? sidesOf(r).map((_,k)=>`${esc(cara(r,k)||caraDir(r,k))}: `+r.mods.map(m=>modT(m,k)+(m.w!==2.3?'('+fmt(m.w,1)+')':'')).join(' ')).join('<br>') : r.mods.map(m=>m.t+(m.w!==2.3?'('+fmt(m.w,1)+')':'')).join(' ')}</td></tr>`; }
   h += `<tr class="tot"><td colspan="4">Total</td><td class="n">${L.racks.reduce((s,r)=>s+r.mods.length,0)}</td><td class="n"></td><td class="n">${t.pos}</td><td class="n">${fmt(t.est,1)}</td><td></td></tr></tbody></table></div>`;
   h += `<h3 class="sec-title">Materiales${diff?' y diferencia con lo instalado':''}</h3><p class="muted" style="margin:0 0 8px">Conteo teórico a partir del plano: sirve para pedir cotización de una modificación. Verificar con el proveedor.</p><div class="tw"><table><thead><tr><th>Elemento</th><th class="n">Cantidad</th>${diff?'<th class="n">Instalado</th><th class="n">Diferencia</th>':''}</tr></thead><tbody>`;
   const row = (lab, a, b) => `<tr><td>${lab}</td><td class="n">${a}</td>${diff?`<td class="n">${b}</td>${dcell(a,b)}`:''}</tr>`;
@@ -1052,7 +1083,7 @@ function build3D(){
   V.pick = [];
   for (const r of L.racks){
     const st = modStarts(r), Lr = runLen(r), isSel = r.id===sel, rid = L.racks.indexOf(r);
-    for (const sd of sidesOf(r)){
+    for (const [kf, sd] of sidesOf(r).entries()){
       // bastidores
       for (let f=0; f<=r.mods.length; f++){
         const sf = (f===0?0:st[f-1]+r.mods[f-1].w) + F/2;
@@ -1066,7 +1097,7 @@ function build3D(){
       add('prot', mats.prot, r, -0.07, sd+D/2, 0.2, 0.1, D, 0.4, undefined, rid);
       add('prot', mats.prot, r, Lr+0.07, sd+D/2, 0.2, 0.1, D, 0.4, undefined, rid);
       r.mods.forEach((m,mi)=>{
-        const T = tipo(m.t), s0 = st[mi], sc = s0 + m.w/2;
+        const T = tipo(modT(m,kf)), s0 = st[mi], sc = s0 + m.w/2;
         for (const l of T.niveles){
           if (l.h > 0) for (const dd of [sd+0.03, sd+D-0.03]) add('beam', mats.beam, r, sc, dd, l.h-0.06, m.w, 0.05, 0.12, isSel ? 0x2f80ed : 0xe4571c, rid);
           if (l.k==='E') add('deck', mats.deck, r, sc, sd+D/2, l.h+0.01, m.w, D-0.04, 0.02, undefined, rid);
