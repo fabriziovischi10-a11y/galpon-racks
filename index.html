@@ -140,6 +140,12 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .e-txt{font-family:var(--f-mono);fill:var(--ink2)}
 .e-hit{fill:transparent;cursor:ns-resize;touch-action:none}
 .e-hit:hover{fill:var(--sel-soft)}
+.e-edit{cursor:pointer;text-decoration:underline;text-decoration-style:dotted}
+.e-edit-hit{fill:transparent;cursor:pointer}
+.e-edit-hit:hover{fill:var(--sel-soft)}
+.cota-ed{position:fixed;z-index:25;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:6px;max-width:calc(100% - 16px)}
+.cota-ed label{font-size:12px;color:var(--ink2)}
+.cota-ed input{width:90px}
 .e-drag{fill:var(--sel)!important}
 .e-dragt{font-family:var(--f-mono);font-weight:600;fill:var(--sel);paint-order:stroke;stroke:var(--paper);stroke-width:.12}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:9px 14px;border-radius:8px;font-size:13px;z-index:30;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -705,25 +711,38 @@ function elevModuleSVG(s0, m, T, sx, opts={}){ // dibuja un módulo en coordenad
   return s;
 }
 function upright(x, h){ return `<rect class="s-up" x="${x}" y="${-h}" width="${F}" height="${h}"/>`; }
-function vdimSVG(x, z0, z1, txt, size=0.26){
+// ed = atributos data-* que hacen la cota editable al tocarla (valor en metros)
+function vdimSVG(x, z0, z1, txt, size=0.26, ed=''){
   if (z1-z0 < 0.05) return '';
+  const cls = ed ? 's-dimt e-edit' : 's-dimt';
   return `<line class="s-dim" x1="${x}" y1="${-z0}" x2="${x}" y2="${-z1}"/><line class="s-dim" x1="${x-0.12}" y1="${-z0+0.12}" x2="${x+0.12}" y2="${-z0-0.12}"/><line class="s-dim" x1="${x-0.12}" y1="${-z1+0.12}" x2="${x+0.12}" y2="${-z1-0.12}"/>`+
-    `<text class="s-dimt" font-size="${size}" text-anchor="middle" transform="translate(${x-0.12} ${-(z0+z1)/2}) rotate(-90)">${txt}</text>`;
+    (ed ? `<rect class="e-edit-hit" ${ed} x="${x-0.42}" y="${-z1}" width="0.5" height="${z1-z0}"><title>Tocá para escribir la medida en metros</title></rect>` : '')+
+    `<text class="${cls}" ${ed} font-size="${size}" text-anchor="middle" transform="translate(${x-0.12} ${-(z0+z1)/2}) rotate(-90)">${txt}</text>`;
 }
-function hdimSVG(x0, x1, z, txt, size=0.26){
+function hdimSVG(x0, x1, z, txt, size=0.26, ed=''){
+  const cls = ed ? 's-dimt e-edit' : 's-dimt';
   return `<line class="s-dim" x1="${x0}" y1="${-z}" x2="${x1}" y2="${-z}"/><line class="s-dim" x1="${x0-0.1}" y1="${-z+0.1}" x2="${x0+0.1}" y2="${-z-0.1}"/><line class="s-dim" x1="${x1-0.1}" y1="${-z+0.1}" x2="${x1+0.1}" y2="${-z-0.1}"/>`+
-    `<text class="s-dimt" font-size="${size}" text-anchor="middle" x="${(x0+x1)/2}" y="${-z-0.1}">${txt}</text>`;
+    (ed ? `<rect class="e-edit-hit" ${ed} x="${x0}" y="${-z-0.42}" width="${x1-x0}" height="0.5"><title>Tocá para escribir la medida en metros</title></rect>` : '')+
+    `<text class="${cls}" ${ed} font-size="${size}" text-anchor="middle" x="${(x0+x1)/2}" y="${-z-0.1}">${txt}</text>`;
+}
+const fm = v => fmt(v) + ' m';
+// cadena de cotas verticales de un tipo: cada tramo edita la separación con el nivel de abajo
+function levelChain(key, x, size=0.26){
+  const T = L.tipos[key]; const lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
+  let s = '', prev = 0;
+  for (const l of lv){ if (l.h > prev + 0.04) s += vdimSVG(x, prev, l.h, fm(l.h-prev), size, `data-ed="gap" data-t="${esc(key)}" data-bi="${l.i}" data-lo="${prev}" data-v="${+(l.h-prev).toFixed(3)}"`); prev = l.h; }
+  return s;
 }
 function typeCardSVG(key){
   const T = L.tipos[key], p = L.params, m = {t:key, w:2.3}, lv = [...T.niveles].sort((a,b)=>a.h-b.h);
   const top = Math.max(p.portico, ...lv.map(l=>l.h + (l.k==='P'?p.palletH:0.3))) + 0.4;
   let s = `<rect class="e-ground" x="-1.9" y="0" width="${2.3+2*F+2.4}" height="0.15"/>`;
   s += upright(0, p.portico) + upright(F+2.3, p.portico) + elevModuleSVG(F, m, T);
-  let prev = 0; for (const l of lv){ s += vdimSVG(-0.45, prev, l.h, fmt(l.h-prev)); prev = l.h; }
-  s += vdimSVG(-1.25, 0, p.portico, 'Bastidor '+fmt(p.portico));
-  for (const l of lv) s += `<text class="e-txt" font-size="0.27" x="${2.3+2*F+0.12}" y="${-l.h+0.05}">${l.h===0?'piso':'+'+fmt(l.h)}${l.k==='E'?' est.':''}</text>`;
-  s += hdimSVG(F, F+2.3, -0.45, '2,30');
-  return `<svg viewBox="-1.9 ${-top} ${2.3+2*F+3.3} ${top+0.9}" role="img" aria-label="Alzado del tipo ${esc(T.nombre)}">${s}</svg>`;
+  s += levelChain(key, -0.45);
+  s += vdimSVG(-1.25, 0, p.portico, 'Bastidor '+fm(p.portico), 0.26, `data-ed="portico" data-v="${p.portico}"`);
+  for (const l of lv) s += `<text class="e-txt" font-size="0.27" x="${2.3+2*F+0.12}" y="${-l.h+0.05}">${l.h===0?'piso':'+'+fm(l.h)}${l.k==='E'?' est.':''}</text>`;
+  s += hdimSVG(F, F+2.3, -0.45, '2,30 m');
+  return `<svg viewBox="-1.9 ${-top} ${2.3+2*F+3.6} ${top+0.9}" role="img" aria-label="Alzado del tipo ${esc(T.nombre)}">${s}</svg>`;
 }
 function rackElevationSVG(r){
   const p=L.params, st=modStarts(r), Lr=runLen(r), sc=34;
@@ -732,11 +751,15 @@ function rackElevationSVG(r){
   for (let f=0; f<=r.mods.length; f++) s += upright(f===0?0:st[f-1]+r.mods[f-1].w, p.portico);
   r.mods.forEach((m,i)=>{ s += elevModuleSVG(st[i], m, tipo(m.t));
     s += `<text class="e-txt" font-size="0.3" text-anchor="middle" x="${st[i]+m.w/2}" y="0.5" style="${i===selMod?'fill:var(--sel);font-weight:600':''}">${i+1} · ${esc(m.t)}</text>`;
-    s += hdimSVG(st[i], st[i]+m.w, -0.95, fmt(m.w), 0.24); });
-  s += hdimSVG(0, Lr, -1.45, `${fmt(Lr)} m`, 0.3);
-  s += vdimSVG(-0.6, 0, p.portico, fmt(p.portico));
-  const W0 = (Lr+2.4)*sc, H0 = (top+1.7)*sc;
-  return `<svg width="${W0}" height="${H0}" viewBox="-1.2 ${-top} ${Lr+2.4} ${top+1.7}" role="img" aria-label="Alzado frontal de ${esc(r.nombre)}">${s}</svg>`;
+    s += hdimSVG(st[i], st[i]+m.w, -0.95, fm(m.w), 0.24, `data-ed="w" data-r="${esc(r.id)}" data-mi="${i}" data-v="${m.w}"`); });
+  s += hdimSVG(0, Lr, -1.45, `Largo total ${fm(Lr)}`, 0.3);
+  s += vdimSVG(-1.5, 0, p.portico, 'Bastidor '+fm(p.portico), 0.26, `data-ed="portico" data-v="${p.portico}"`);
+  s += levelChain(r.mods[0].t, -0.6, 0.24);
+  // cadena de alturas de cada tipo distinto, arriba de su primer módulo
+  const vistos = new Set([r.mods[0].t]);
+  r.mods.forEach((m,i)=>{ if (vistos.has(m.t)) return; vistos.add(m.t); s += levelChain(m.t, st[i]+0.32, 0.22); });
+  const W0 = (Lr+3.2)*sc, H0 = (top+1.7)*sc;
+  return `<svg width="${W0}" height="${H0}" viewBox="-2 ${-top} ${Lr+3.2} ${top+1.7}" role="img" aria-label="Alzado frontal de ${esc(r.nombre)}">${s}</svg>`;
 }
 function sectionSVG(r){
   // Corte N-S del galpón por el eje del rack elegido (solo racks a 90°/270°)
@@ -773,7 +796,8 @@ function sectionSVG(r){
     }
   }
   // cotas
-  s += vdimSVG(-0.7, 0, eave, `Alero ${fmt(eave)}`, 0.32);
+  s += vdimSVG(-0.7, 0, eave, `Alero ${fm(eave)}`, 0.32, `data-ed="alero" data-v="${eave}"`);
+  s += vdimSVG(yN+0.75, eave, eave+rise, `Flecha ${fm(rise)}`, 0.28, `data-ed="flecha" data-v="${rise}"`);
   if (maxTop>0){ s += `<line style="stroke:var(--warn);stroke-width:.04;stroke-dasharray:.2 .15" x1="0" y1="${-maxTop}" x2="${yN}" y2="${-maxTop}"/>`;
     s += `<text class="e-txt" font-size="0.32" x="${yN-0.2}" y="${-maxTop-0.15}" text-anchor="end" style="fill:var(--warn)">Tope de carga +${fmt(maxTop)} · libre al alero ${fmt(eave-maxTop)} m</text>`; }
   s += hdimSVG(0, yN, -2.0, `Ancho interior en este corte ${fmt(yN)} m`, 0.34);
@@ -783,7 +807,7 @@ function sectionSVG(r){
 }
 function drawAlzados(){
   const el = $('#alzBody'), r = L.racks.find(x=>x.id===sel), ed = editable();
-  let h = `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Arrastrá cualquier larguero naranja hacia arriba o abajo</b> para cambiar su altura (de a 5 cm; con Shift, de a 1 cm), o escribí la medida. Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
+  let h = `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Tocá cualquier cota azul para escribir la medida en metros</b> (separación entre largueros, ancho de módulo, bastidor, alero), o <b>arrastrá un larguero naranja</b> hacia arriba o abajo (de a 5 cm; con Shift, de a 1 cm). Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
   for (const [k,T] of Object.entries(L.tipos)){
     const used = L.racks.reduce((s,r)=>s + r.mods.filter(m=>m.t===k).length*(r.doble?2:1), 0);
     h += `<div class="tcard"><h3>${esc(k)} · ${esc(T.nombre)}</h3><div class="muted">${used} módulos en este plano${T.tunel?` · túnel de ${T.tunel==='pasillo'?'paso entre pasillos':'portón'}`:''}</div>${typeCardSVG(k)}`;
@@ -825,19 +849,20 @@ $('#alzBody').addEventListener('pointerdown', ev => {
   ev.preventDefault();
   const body = $('#alzBody'); const idx = [...body.querySelectorAll('svg')].indexOf(t.ownerSVGElement);
   const k = t.dataset.bt, i = +t.dataset.bi;
-  ensureEditable();
-  const svgEl = body.querySelectorAll('svg')[idx]; if (!svgEl || !L.tipos[k]) return;
+  const svgEl = t.ownerSVGElement; if (!svgEl || !L.tipos[k]) return;
   const ctm = svgEl.getScreenCTM(); const lv = L.tipos[k].niveles[i];
-  bdrag = {k, i, svgEl, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
+  bdrag = {k, i, svgEl, idx, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
   body.setPointerCapture(ev.pointerId);
-  body.querySelectorAll(`.e-beam[data-bt="${CSS.escape(k)}"][data-bi="${i}"]`).forEach(e=>e.classList.add('e-drag'));
 });
 $('#alzBody').addEventListener('pointermove', ev => {
   if (!bdrag) return;
   const st = ev.shiftKey ? 0.01 : 0.05;
   let h = bdrag.h0 - (ev.clientY - bdrag.y0)/bdrag.ppm; h = Math.round(h/st)*st; h = Math.max(0.15, Math.min(L.params.portico + 0.4, h));
-  if (Math.abs(h - bdrag.h) < 1e-6) return; bdrag.h = h; bdrag.moved = true;
+  if (Math.abs(h - bdrag.h) < 1e-6) return; bdrag.h = h;
   const body = $('#alzBody');
+  if (!bdrag.moved){ bdrag.moved = true;
+    if (!editable()){ ensureEditable(); bdrag.svgEl = body.querySelectorAll('svg')[bdrag.idx] || bdrag.svgEl; } // se redibuja: tomar el SVG nuevo
+    body.querySelectorAll(`.e-beam[data-bt="${CSS.escape(bdrag.k)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.classList.add('e-drag')); }
   body.querySelectorAll(`[data-bt="${CSS.escape(bdrag.k)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.setAttribute('y', (-h + (+e.dataset.off)).toFixed(3)));
   let lab = bdrag.svgEl.querySelector('.e-dragt');
   if (!lab){ lab = document.createElementNS('http://www.w3.org/2000/svg','text'); lab.setAttribute('class','e-dragt'); lab.setAttribute('font-size','0.34'); bdrag.svgEl.appendChild(lab); }
@@ -847,6 +872,43 @@ $('#alzBody').addEventListener('pointermove', ev => {
 function endBeamDrag(){
   if (!bdrag) return; const b = bdrag; bdrag = null;
   if (b.moved) setNivel(b.k, b.i, 'h', b.h); else drawAlzados();
+}
+/* ---- cotas editables: tocar una medida y escribirla en metros ---- */
+$('#alzBody').addEventListener('click', ev => {
+  const t = ev.target.closest('[data-ed]'); if (!t) return;
+  abrirEditorCota(t, ev.clientX, ev.clientY);
+});
+function abrirEditorCota(t, cx, cy){
+  const prev = $('#cotaEd'); if (prev) prev.remove();
+  const d = {...t.dataset};
+  const nombres = {gap:'Separación con el nivel de abajo', w:'Ancho del módulo (largo del larguero)', portico:'Altura del bastidor', alero:'Altura del alero', flecha:'Flecha del techo'};
+  const box = document.createElement('div'); box.id = 'cotaEd'; box.className = 'cota-ed';
+  box.innerHTML = `<label for="cotaInp">${nombres[d.ed]||'Medida'}</label><div class="row"><input type="number" id="cotaInp" step="0.01" min="0.05" value="${d.v}"><span>m</span><button class="btn pri" id="cotaOk">Aplicar</button></div>`+
+    (d.ed==='gap' ? `<p class="muted" style="margin:4px 0 0">Los niveles de arriba se corren junto con este.</p>` : '');
+  document.body.appendChild(box);
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, cx + 10)) + 'px';
+  box.style.top = Math.max(8, Math.min(innerHeight - bh - 8, cy + 10)) + 'px';
+  const inp = box.querySelector('#cotaInp'); inp.focus(); inp.select();
+  const cerrar = () => { box.remove(); document.removeEventListener('pointerdown', fuera, true); };
+  const fuera = e => { if (!box.contains(e.target)) cerrar(); };
+  setTimeout(() => document.addEventListener('pointerdown', fuera, true), 0);
+  const aplicar = () => { const v = parseFloat(String(inp.value).replace(',', '.')); cerrar(); if (isNaN(v) || v <= 0) return; aplicarCota(d, v); };
+  box.querySelector('#cotaOk').onclick = aplicar;
+  inp.onkeydown = e => { if (e.key==='Enter') aplicar(); if (e.key==='Escape') cerrar(); };
+}
+function aplicarCota(d, v){
+  v = +v.toFixed(3);
+  ensureEditable(); commit();
+  if (d.ed === 'gap'){
+    const T = L.tipos[d.t]; if (!T) return; const lv = T.niveles; const hi = lv[+d.bi].h; const delta = (+d.lo + v) - hi;
+    lv.forEach(l => { if (l.h >= hi - 1e-9) l.h = +(l.h + delta).toFixed(3); });
+  } else if (d.ed === 'w'){
+    const r = L.racks.find(x=>x.id===d.r); if (!r || !r.mods[+d.mi]) return; r.mods[+d.mi].w = v;
+  } else if (['portico','alero','flecha'].includes(d.ed)){
+    L.params[d.ed] = v;
+  }
+  saved();
 }
 $('#alzBody').addEventListener('pointerup', endBeamDrag);
 $('#alzBody').addEventListener('pointercancel', endBeamDrag);
