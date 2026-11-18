@@ -138,6 +138,14 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .e-wood{fill:#9b6b3d}
 .e-load{fill:var(--pal);stroke:var(--ink);stroke-width:.015}
 .e-txt{font-family:var(--f-mono);fill:var(--ink2)}
+.e-hit{fill:transparent;cursor:ns-resize;touch-action:none}
+.e-hit:hover{fill:var(--sel-soft)}
+.e-drag{fill:var(--sel)!important}
+.e-dragt{font-family:var(--f-mono);font-weight:600;fill:var(--sel);paint-order:stroke;stroke:var(--paper);stroke-width:.12}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:9px 14px;border-radius:8px;font-size:13px;z-index:30;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.lvbox{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.lvbox .lv{grid-template-columns:auto 1fr auto}
+.lvbox .lv span{font-family:var(--f-mono);font-size:12px;color:var(--ink2)}
 .e-ground{fill:var(--grid2)}
 .e-roof{fill:none;stroke:var(--wall);stroke-width:.12}
 .e-wallf{fill:var(--wall)}
@@ -627,9 +635,18 @@ function drawEditor(){
         <select id="eW" ${dis} aria-label="Ancho del módulo"><option value="2.3" ${m.w===2.3?'selected':''}>2,30 m</option><option value="1.2" ${m.w===1.2?'selected':''}>1,20 m</option>${[2.3,1.2].includes(m.w)?'':`<option selected value="${m.w}">${fmt(m.w)} m</option>`}</select>
       </div>
       <div class="row"><button class="btn" id="mL" ${dis}>◀ Mover</button><button class="btn" id="mR" ${dis}>Mover ▶</button><button class="btn" id="mIns" ${dis}>Duplicar</button><button class="btn danger" id="mDel" ${dis}>Quitar</button></div>`
-      : `<p class="muted" style="margin:0 0 6px">Elegí un módulo para cambiar su tipo o ancho.</p>`}
+      : `<p class="muted" style="margin:0 0 6px">Elegí un módulo para cambiar su tipo, su ancho o la altura de sus largueros.</p>`}
+    ${m ? (()=>{ const T=tipo(m.t); const n=L.racks.reduce((s,q)=>s+q.mods.filter(x=>x.t===m.t).length,0);
+      return `<div class="lvbox"><div class="muted" style="margin-bottom:4px"><b>Altura de los largueros naranjas</b> · tipo ${esc(m.t)}, cambia los ${n} módulos de ese tipo</div>`+
+        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>b.h-a.h).map(l=>`<div class="lv"><span>${l.h===0?'Piso':l.k==='P'?'Pallets':'Estante'}</span><input type="number" step="0.05" min="0" data-lt="${esc(m.t)}" data-li="${l.i}" value="${l.h}" ${l.h===0?'disabled':''} aria-label="Altura del nivel en metros"><span>m</span></div>`).join('')+
+        `<div class="row" style="margin-top:8px"><button class="btn" id="mSolo">Cambiar solo este módulo</button></div></div>`; })() : ''}
     ${ed ? `<div class="row" style="margin-top:10px"><button class="btn" id="rAdd">+ Módulo al final</button><button class="btn" id="rRot">Girar 90°</button><button class="btn" id="rDup">Duplicar rack</button><span id="rDelW"><button class="btn danger" id="rDel">Borrar rack</button></span></div>` : ''}`;
   el.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ selMod=+b.dataset.mi; drawEditor(); drawPlanta(); if (store.tab==='alzados') drawAlzados(); });
+  el.querySelectorAll('[data-lt]').forEach(i=>i.onchange=()=>{ const v=parseFloat(i.value); if (isNaN(v)||v<0) return; setNivel(i.dataset.lt, +i.dataset.li, 'h', v); });
+  const solo = el.querySelector('#mSolo');
+  if (solo) solo.onclick = () => { ensureEditable(); const rr=L.racks.find(x=>x.id===sel), mm=rr && rr.mods[selMod]; if (!mm) return; commit();
+    let n=2; while (L.tipos[mm.t+n]) n++; const key=mm.t+n; L.tipos[key] = {...clone(tipo(mm.t)), nombre: tipo(mm.t).nombre+` (${rr.id} mód. ${selMod+1})`}; mm.t = key; saved();
+    toast(`El módulo ${selMod+1} de ${rr.nombre} ahora es el tipo ${key}: sus alturas se cambian sin tocar los demás.`); };
   if (!ed) return;
   const num = (id, f) => { const i=el.querySelector(id); i.onchange=()=>{ const v=parseFloat(i.value); if (isNaN(v)) return; commit(); f(v); saved(); }; };
   el.querySelector('#eNom').onchange = e => { commit(); r.nombre = e.target.value.trim() || r.id; saved(); };
@@ -671,10 +688,12 @@ function drawParams(){
 /* ================= ALZADOS Y CORTE ================= */
 function elevModuleSVG(s0, m, T, sx, opts={}){ // dibuja un módulo en coordenadas (X = s, Y = -z)
   const p = L.params; let s = '';
-  const x0 = s0, x1 = s0 + m.w, lv = [...T.niveles].sort((a,b)=>a.h-b.h);
+  const x0 = s0, x1 = s0 + m.w, lv = T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h);
+  const tag = (l, off) => `data-bt="${esc(m.t)}" data-bi="${l.i}" data-off="${off}"`;
   for (const l of lv){
-    if (l.h > 0) s += `<rect class="e-beam" x="${x0}" y="${-l.h}" width="${m.w}" height="0.12"/>`;
-    if (l.k === 'E') s += `<rect class="e-deck" x="${x0}" y="${-l.h-0.03}" width="${m.w}" height="0.03"/>`;
+    if (l.h > 0) s += `<rect class="e-beam" ${tag(l,0)} x="${x0}" y="${-l.h}" width="${m.w}" height="0.12"/>`;
+    if (l.k === 'E') s += `<rect class="e-deck" ${tag(l,-0.03)} x="${x0}" y="${-l.h-0.03}" width="${m.w}" height="0.03"/>`;
+    if (l.h > 0 && opts.drag !== false) s += `<rect class="e-hit" ${tag(l,-0.22)} x="${x0}" y="${-l.h-0.22}" width="${m.w}" height="0.56"><title>Arrastrá para cambiar la altura (+${fmt(l.h)} m)</title></rect>`;
     if (l.k === 'P' && opts.pallets !== false){ const k = palPer(m), pw = Math.min(1.0,(m.w-0.1)/k);
       for (let q=0;q<k;q++){ const c = x0 + m.w*(q+0.5)/k, a = c-pw/2;
         s += `<rect class="e-wood" x="${a}" y="${-l.h-0.15}" width="${pw}" height="0.15"/>`;
@@ -764,11 +783,11 @@ function sectionSVG(r){
 }
 function drawAlzados(){
   const el = $('#alzBody'), r = L.racks.find(x=>x.id===sel), ed = editable();
-  let h = `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px">Altura de cada nivel desde el piso, en metros (cara superior del larguero). P = nivel de pallets, E = estante de tablilla lisa.${ed?' Los cambios se aplican a todos los módulos de ese tipo.':''}</p><div class="types">`;
+  let h = `<h3 class="sec-title">Tipos de módulo</h3><p class="muted" style="margin:0 0 10px"><b>Arrastrá cualquier larguero naranja hacia arriba o abajo</b> para cambiar su altura (de a 5 cm; con Shift, de a 1 cm), o escribí la medida. Es la altura desde el piso a la cara de arriba del larguero. P = pallets, E = estante de tablilla. El cambio se aplica a todos los módulos de ese tipo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p><div class="types">`;
   for (const [k,T] of Object.entries(L.tipos)){
     const used = L.racks.reduce((s,r)=>s + r.mods.filter(m=>m.t===k).length*(r.doble?2:1), 0);
     h += `<div class="tcard"><h3>${esc(k)} · ${esc(T.nombre)}</h3><div class="muted">${used} módulos en este plano${T.tunel?` · túnel de ${T.tunel==='pasillo'?'paso entre pasillos':'portón'}`:''}</div>${typeCardSVG(k)}`;
-    h += [...T.niveles].map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<div class="lv"><input type="number" step="0.05" data-t="${esc(k)}" data-i="${l.i}" data-f="h" value="${l.h}" ${ed?'':'disabled'} aria-label="Altura del nivel"><select data-t="${esc(k)}" data-i="${l.i}" data-f="k" ${ed?'':'disabled'} aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>P · pallets</option><option value="E" ${l.k==='E'?'selected':''}>E · estante</option></select>${ed?`<button class="btn danger" data-t="${esc(k)}" data-del="${l.i}" aria-label="Quitar nivel">×</button>`:'<span></span>'}</div>`).join('');
+    h += [...T.niveles].map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<div class="lv"><input type="number" step="0.05" data-t="${esc(k)}" data-i="${l.i}" data-f="h" value="${l.h}" aria-label="Altura del nivel"><select data-t="${esc(k)}" data-i="${l.i}" data-f="k" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>P · pallets</option><option value="E" ${l.k==='E'?'selected':''}>E · estante</option></select>${ed?`<button class="btn danger" data-t="${esc(k)}" data-del="${l.i}" aria-label="Quitar nivel">×</button>`:'<span></span>'}</div>`).join('');
     if (ed) h += `<div class="row" style="margin-top:6px"><button class="btn" data-addlv="${esc(k)}">+ Nivel</button></div>`;
     h += `</div>`;
   }
@@ -780,13 +799,57 @@ function drawAlzados(){
   if (r && [90,270].some(a=>Math.abs(((r.ang%360)+360)%360 - a) < 1)) h += `<p class="muted" style="margin:0 0 8px">Corte Sur–Norte por el eje de ${esc(r.nombre)} (x = ${fmt(centroid(foot(r))[0])} m). Alero y techo estimados.</p><div class="elev">${sectionSVG(r)}</div>`;
   else h += `<p class="muted">Elegí una fila perpendicular al muro Sur (por ejemplo F5) para ver el corte con el rack de muro, la fila y el techo.</p>`;
   el.innerHTML = h;
+  el.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{ const v = i.dataset.f==='h' ? parseFloat(i.value) : i.value;
+    if (i.dataset.f==='h' && (isNaN(v) || v<0)) return; setNivel(i.dataset.t, +i.dataset.i, i.dataset.f, v); });
   if (!ed) return;
-  el.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{ const T=L.tipos[i.dataset.t], l=T.niveles[+i.dataset.i]; commit();
-    if (i.dataset.f==='h'){ const v=parseFloat(i.value); if (!isNaN(v) && v>=0) l.h=+v.toFixed(3); } else l.k=i.value; saved(); });
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const T=L.tipos[b.dataset.t]; if (T.niveles.length<2) return; commit(); T.niveles.splice(+b.dataset.del,1); saved(); });
   el.querySelectorAll('[data-addlv]').forEach(b=>b.onclick=()=>{ const T=L.tipos[b.dataset.addlv]; commit(); const mx=Math.max(0,...T.niveles.map(l=>l.h)); T.niveles.push({h:+(mx+L.params.palletH+0.25).toFixed(2), k:'P'}); saved(); });
   const nt = $('#bNewType'); if (nt) nt.onclick = () => { commit(); let n=1; while (L.tipos['N'+n]) n++; const src = L.tipos.S || L.tipos.B || Object.values(L.tipos)[0]; L.tipos['N'+n] = {...clone(src), nombre:'Nuevo tipo '+n, tunel:null}; saved(); };
 }
+
+/* ---- edición de alturas de niveles (largueros naranjas) ---- */
+function toast(t){ let d=$('#toast'); if (!d){ d=document.createElement('div'); d.id='toast'; d.className='toast'; d.setAttribute('role','status'); document.body.appendChild(d); }
+  d.textContent=t; d.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>d.hidden=true, 4200); }
+function ensureEditable(){
+  if (editable()) return true;
+  const s=sel, sm=selMod; dupLayout(); sel=s; selMod=sm; refreshAll();
+  toast(`Se creó «${L.nombre}» para no tocar lo instalado. Tus cambios quedan ahí.`); return true;
+}
+function setNivel(key, i, campo, v){
+  ensureEditable(); const T=L.tipos[key]; if (!T || !T.niveles[i]) return;
+  commit(); if (campo==='h') T.niveles[i].h = +(+v).toFixed(3); else T.niveles[i].k = v; saved();
+}
+let bdrag = null;
+$('#alzBody').addEventListener('pointerdown', ev => {
+  const t = ev.target.closest('.e-hit'); if (!t) return;
+  ev.preventDefault();
+  const body = $('#alzBody'); const idx = [...body.querySelectorAll('svg')].indexOf(t.ownerSVGElement);
+  const k = t.dataset.bt, i = +t.dataset.bi;
+  ensureEditable();
+  const svgEl = body.querySelectorAll('svg')[idx]; if (!svgEl || !L.tipos[k]) return;
+  const ctm = svgEl.getScreenCTM(); const lv = L.tipos[k].niveles[i];
+  bdrag = {k, i, svgEl, ppm:ctm.d, y0:ev.clientY, h0:lv.h, h:lv.h, moved:false, id:ev.pointerId};
+  body.setPointerCapture(ev.pointerId);
+  body.querySelectorAll(`.e-beam[data-bt="${CSS.escape(k)}"][data-bi="${i}"]`).forEach(e=>e.classList.add('e-drag'));
+});
+$('#alzBody').addEventListener('pointermove', ev => {
+  if (!bdrag) return;
+  const st = ev.shiftKey ? 0.01 : 0.05;
+  let h = bdrag.h0 - (ev.clientY - bdrag.y0)/bdrag.ppm; h = Math.round(h/st)*st; h = Math.max(0.15, Math.min(L.params.portico + 0.4, h));
+  if (Math.abs(h - bdrag.h) < 1e-6) return; bdrag.h = h; bdrag.moved = true;
+  const body = $('#alzBody');
+  body.querySelectorAll(`[data-bt="${CSS.escape(bdrag.k)}"][data-bi="${bdrag.i}"]`).forEach(e=>e.setAttribute('y', (-h + (+e.dataset.off)).toFixed(3)));
+  let lab = bdrag.svgEl.querySelector('.e-dragt');
+  if (!lab){ lab = document.createElementNS('http://www.w3.org/2000/svg','text'); lab.setAttribute('class','e-dragt'); lab.setAttribute('font-size','0.34'); bdrag.svgEl.appendChild(lab); }
+  const pt0 = bdrag.svgEl.createSVGPoint(); pt0.x = ev.clientX; pt0.y = ev.clientY; const p = pt0.matrixTransform(bdrag.svgEl.getScreenCTM().inverse());
+  lab.setAttribute('x', (p.x + 0.25).toFixed(3)); lab.setAttribute('y', (-h - 0.18).toFixed(3)); lab.textContent = `+${fmt(h)} m`;
+});
+function endBeamDrag(){
+  if (!bdrag) return; const b = bdrag; bdrag = null;
+  if (b.moved) setNivel(b.k, b.i, 'h', b.h); else drawAlzados();
+}
+$('#alzBody').addEventListener('pointerup', endBeamDrag);
+$('#alzBody').addEventListener('pointercancel', endBeamDrag);
 
 /* ================= LISTADO ================= */
 function drawListado(){
@@ -966,11 +1029,12 @@ function fillVersions(){
   $('#bDup').textContent = L.base ? 'Crear versión editable' : 'Duplicar versión';
 }
 $('#selVer').onchange = e => setLayout(e.target.value);
-$('#bDup').onclick = () => {
+function dupLayout(){
   const c = clone(L); c.id = 'v' + Date.now().toString(36); c.base = false; delete c.nota;
   c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${L.id==='sotic'?'instalado':'opción 23-9'})` : L.nombre + ' (copia)';
   store.versions.push(c); setLayout(c.id);
-};
+}
+$('#bDup').onclick = dupLayout;
 $('#bRen').onclick = () => {
   if (!editable()) return; const sp = $('#bRen');
   const inp = document.createElement('input'); inp.type='text'; inp.value=L.nombre; inp.id='renInp'; inp.style.width='220px'; sp.replaceWith(inp); inp.focus(); inp.select();
