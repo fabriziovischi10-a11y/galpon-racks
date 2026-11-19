@@ -160,12 +160,16 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .rlv-t{display:flex;flex-direction:column;gap:4px}
 .rlv-i{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--ink2)}
 .rlv-i input{width:72px}
+.rlv-i{border:1px solid var(--line);border-radius:6px;padding:3px 4px}
+.btn.mini{padding:2px 8px;font-size:13px}
+.rlv-i select{padding:3px 4px;font-size:12px}
 .cota-ed input{width:90px}
 .e-drag{fill:var(--sel)!important}
 .e-dragt{font-family:var(--f-mono);font-weight:600;fill:var(--sel);paint-order:stroke;stroke:var(--paper);stroke-width:.12}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:9px 14px;border-radius:8px;font-size:13px;z-index:30;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .lvbox{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .lvbox .lv{grid-template-columns:auto 1fr auto}
+.lvbox .lv.lv4{grid-template-columns:62px 1fr auto auto}
 .lvbox .lv span{font-family:var(--f-mono);font-size:12px;color:var(--ink2)}
 .e-ground{fill:var(--grid2)}
 .e-roof{fill:none;stroke:var(--wall);stroke-width:.12}
@@ -700,8 +704,8 @@ function drawEditor(){
       : `<p class="muted" style="margin:0 0 6px">Elegí un módulo para cambiar su tipo, su ancho o la altura de sus largueros.</p>`}
     ${m ? (()=>{ const T=tipo(mk); const n=L.racks.reduce((s,q)=>s+q.mods.reduce((a,x)=>a+sidesOf(q).filter((_,f)=>modT(x,f)===mk).length,0),0);
       return `<div class="lvbox"><div class="muted" style="margin-bottom:4px"><b>Altura de los largueros naranjas</b> · tipo ${esc(mk)}, cambia los ${n} módulos (caras) de ese tipo</div>`+
-        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>b.h-a.h).map(l=>`<div class="lv"><span>${l.h===0?'Piso':l.k==='P'?'Pallets':'Estante'}</span><input type="number" step="0.05" min="0" data-lt="${esc(mk)}" data-li="${l.i}" value="${l.h}" ${l.h===0?'disabled':''} aria-label="Altura del nivel en metros"><span>m</span></div>`).join('')+
-        `<div class="row" style="margin-top:8px"><button class="btn" id="mSolo">Cambiar solo este módulo${r.doble?` (cara ${esc(cn)})`:''}</button></div></div>`; })() : ''}
+        T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>b.h-a.h).map(l=>`<div class="lv lv4"><span>${l.h===0?'Piso':l.k==='P'?'Pallets':'Estante'}</span><input type="number" step="0.05" min="0" data-lt="${esc(mk)}" data-li="${l.i}" value="${l.h}" ${l.h===0?'disabled':''} aria-label="Altura del nivel en metros"><span>m</span><button class="btn danger mini" data-pdel="${l.i}" title="Quitar este larguero" aria-label="Quitar larguero">×</button></div>`).join('')+
+        `<div class="row" style="margin-top:8px"><button class="btn" id="mAddLv">+ Larguero</button><button class="btn" id="mSolo">Cambiar solo este módulo${r.doble?` (cara ${esc(cn)})`:''}</button></div></div>`; })() : ''}
     ${ed ? `<div class="row" style="margin-top:10px"><button class="btn" id="rAdd">+ Módulo al final</button><button class="btn" id="rRot">Girar 90°</button><button class="btn" id="rDup">Duplicar rack</button><span id="rDelW"><button class="btn danger" id="rDel">Borrar rack</button></span></div>` : ''}`;
   el.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{ selMod=+b.dataset.mi; drawEditor(); drawPlanta(); if (store.tab==='alzados') drawAlzados(); });
   el.querySelectorAll('[data-cara]').forEach(i=>i.onchange=()=>{ const v = i.value.trim().toUpperCase(); const k = +i.dataset.cara;
@@ -715,6 +719,8 @@ function drawEditor(){
     const old = modT(mm, kc); let n=2; while (L.tipos[old+n]) n++; const key=old+n; const cc = cara(rr,kc);
     L.tipos[key] = {...clone(tipo(old)), nombre: tipo(old).nombre+` (${cc||rr.id} mód. ${selMod+1})`}; setModT(mm, kc, key, rr.doble); saved();
     toast(`El módulo ${selMod+1} de ${cc||rr.nombre} ahora es el tipo ${key}: sus alturas se cambian sin tocar los demás.`); };
+  const al = el.querySelector('#mAddLv'); if (al) al.onclick = () => agregarNivel(mk);
+  el.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>quitarNivel(mk, +b.dataset.pdel));
   el.querySelectorAll('[data-selcara]').forEach(b=>b.onclick=()=>{ selCara=+b.dataset.selcara; drawEditor(); drawPlanta(); if (store.tab==='alzados') drawAlzados(); });
   if (!ed) return;
   const num = (id, f) => { const i=el.querySelector(id); i.onchange=()=>{ const v=parseFloat(i.value); if (isNaN(v)) return; commit(); f(v); saved(); }; };
@@ -872,7 +878,7 @@ function sectionSVG(r){
 function drawAlzados(){
   const el = $('#alzBody'), r = L.racks.find(x=>x.id===sel), ed = editable();
   // ---- alzado de cada rack: lo que se cambia acá afecta SOLO a ese rack ----
-  let h = `<h3 class="sec-title">Alzado de cada rack</h3><p class="muted" style="margin:0 0 8px">Cada rack tiene su propio alzado. <b>Lo que cambies acá vale solo para ese rack</b>: tocá una cota azul y escribí la medida en metros, arrastrá un larguero naranja o escribí la altura abajo de cada dibujo.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p>`;
+  let h = `<h3 class="sec-title">Alzado de cada rack</h3><p class="muted" style="margin:0 0 8px">Cada rack tiene su propio alzado. <b>Lo que cambies acá vale solo para ese rack</b>: tocá una cota azul y escribí la medida en metros, arrastrá un larguero naranja o escribí la altura abajo de cada dibujo. Con <b>«+ Larguero»</b> agregás un travesaño nuevo y con <b>×</b> lo quitás.${ed?'':' Al cambiar algo se crea sola una versión editable, así lo instalado queda intacto.'}</p>`;
   h += `<div class="chips" style="margin:0 0 10px">${L.racks.flatMap(q=>sidesOf(q).map((_,k)=>`<button class="chip ${q.id===sel&&k===selCara?'sel':''}" data-goto="${esc(q.id)}" data-gk="${k}"><span class="cara-mini" style="font-size:12px">${esc(cara(q,k)||'—')}</span><small>${esc(q.id)} · ${caraDir(q,k)}</small></button>`)).join('')}</div>`;
   for (const q of L.racks){
     const s = rackStats(q);
@@ -884,8 +890,10 @@ function drawAlzados(){
       h += `<div class="elev">${rackElevationSVG(q, kf)}</div><div class="rlv">`;
       for (const k of tipos){ const T = tipo(k); const n = q.mods.filter(m=>modT(m,kf)===k).length;
         h += `<div class="rlv-t"><div><b>${esc(k)}</b> <span class="muted">${esc(T.nombre)} · ${n} mód.</span></div><div class="row">`+
-          T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<label class="rlv-i"><span>${l.h===0?'Piso':l.k==='P'?'Pallet':'Estante'}</span><input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lk="${kf}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span></label>`).join('')+
-          `</div></div>`; }
+          T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<span class="rlv-i">${l.h===0?'<span>Piso</span>':''}<input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lk="${kf}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span>`+
+            `<select data-nk="${l.i}" data-nt="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>Pallet</option><option value="E" ${l.k==='E'?'selected':''}>Estante</option></select>`+
+            `<button class="btn danger mini" data-ndel="${l.i}" data-nt="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}" title="Quitar este larguero" aria-label="Quitar larguero">×</button></span>`).join('')+
+          `<button class="btn mini" data-nadd="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}">+ Larguero</button></div></div>`; }
       h += `</div></div>`;
     });
     h += `</div>`;
@@ -894,8 +902,8 @@ function drawAlzados(){
   for (const [k,T] of Object.entries(L.tipos)){
     const used = L.racks.reduce((s,r)=>s + r.mods.reduce((a,m)=>a + sidesOf(r).filter((_,f)=>modT(m,f)===k).length, 0), 0);
     h += `<div class="tcard"><h3>${esc(k)} · ${esc(T.nombre)}</h3><div class="muted">${used} módulos en este plano${T.tunel?` · túnel de ${T.tunel==='pasillo'?'paso entre pasillos':'portón'}`:''}</div>${typeCardSVG(k)}`;
-    h += [...T.niveles].map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<div class="lv"><input type="number" step="0.05" data-t="${esc(k)}" data-i="${l.i}" data-f="h" value="${l.h}" aria-label="Altura del nivel"><select data-t="${esc(k)}" data-i="${l.i}" data-f="k" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>P · pallets</option><option value="E" ${l.k==='E'?'selected':''}>E · estante</option></select>${ed?`<button class="btn danger" data-t="${esc(k)}" data-del="${l.i}" aria-label="Quitar nivel">×</button>`:'<span></span>'}</div>`).join('');
-    if (ed) h += `<div class="row" style="margin-top:6px"><button class="btn" data-addlv="${esc(k)}">+ Nivel</button></div>`;
+    h += [...T.niveles].map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<div class="lv"><input type="number" step="0.05" data-t="${esc(k)}" data-i="${l.i}" data-f="h" value="${l.h}" aria-label="Altura del nivel"><select data-t="${esc(k)}" data-i="${l.i}" data-f="k" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>P · pallets</option><option value="E" ${l.k==='E'?'selected':''}>E · estante</option></select><button class="btn danger" data-t="${esc(k)}" data-del="${l.i}" title="Quitar este larguero" aria-label="Quitar larguero">×</button></div>`).join('');
+    h += `<div class="row" style="margin-top:6px"><button class="btn" data-addlv="${esc(k)}">+ Larguero</button></div>`;
     h += `</div>`;
   }
   h += `</div>`;
@@ -909,9 +917,13 @@ function drawAlzados(){
     ensureEditable(); commit(); const key = ownType(i.dataset.lr, i.dataset.lt, +i.dataset.lk||0); L.tipos[key].niveles[+i.dataset.li].h = +v.toFixed(3); saved(); });
   el.querySelectorAll('[data-f]').forEach(i=>i.onchange=()=>{ const v = i.dataset.f==='h' ? parseFloat(i.value) : i.value;
     if (i.dataset.f==='h' && (isNaN(v) || v<0)) return; setNivel(i.dataset.t, +i.dataset.i, i.dataset.f, v); });
+  // largueros: agregar / quitar / uso — en tarjetas de tipo (todos los módulos) y en cada cara (solo esa cara)
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>quitarNivel(b.dataset.t, +b.dataset.del));
+  el.querySelectorAll('[data-addlv]').forEach(b=>b.onclick=()=>agregarNivel(b.dataset.addlv));
+  el.querySelectorAll('[data-nadd]').forEach(b=>b.onclick=()=>agregarNivel(b.dataset.nadd, b.dataset.nr, +b.dataset.nf));
+  el.querySelectorAll('[data-ndel]').forEach(b=>b.onclick=()=>quitarNivel(b.dataset.nt, +b.dataset.ndel, b.dataset.nr, +b.dataset.nf));
+  el.querySelectorAll('select[data-nk]').forEach(s=>s.onchange=()=>usoNivel(s.dataset.nt, +s.dataset.nk, s.value, s.dataset.nr, +s.dataset.nf));
   if (!ed) return;
-  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const T=L.tipos[b.dataset.t]; if (T.niveles.length<2) return; commit(); T.niveles.splice(+b.dataset.del,1); saved(); });
-  el.querySelectorAll('[data-addlv]').forEach(b=>b.onclick=()=>{ const T=L.tipos[b.dataset.addlv]; commit(); const mx=Math.max(0,...T.niveles.map(l=>l.h)); T.niveles.push({h:+(mx+L.params.palletH+0.25).toFixed(2), k:'P'}); saved(); });
   const nt = $('#bNewType'); if (nt) nt.onclick = () => { commit(); let n=1; while (L.tipos['N'+n]) n++; const src = L.tipos.S || L.tipos.B || Object.values(L.tipos)[0]; L.tipos['N'+n] = {...clone(src), nombre:'Nuevo tipo '+n, tunel:null}; saved(); };
 }
 
@@ -935,6 +947,28 @@ function ownType(rid, key, k=0){
   r.mods.forEach(m => { if (modT(m,k)===key) setModT(m, k, nk, r.doble); });
   toast(`La cara ${nom} ahora tiene sus propias alturas (tipo ${nk}); el resto no cambia.`);
   return nk;
+}
+// Altura sugerida para un larguero nuevo: arriba del último si entra en el bastidor; si no, en el medio del hueco más grande
+function nuevoNivelH(T){
+  const p = L.params, hs = T.niveles.map(l=>l.h).sort((a,b)=>a-b);
+  const top = hs.length ? hs[hs.length-1] : 0, cand = top + p.palletH + 0.25;
+  if (cand <= p.portico) return +(Math.round(cand/0.05)*0.05).toFixed(2);
+  let best = (hs[0]||p.portico)/2, gap = hs[0]||0;
+  for (let i=0;i<hs.length-1;i++){ const g = hs[i+1]-hs[i]; if (g > gap){ gap = g; best = hs[i] + g/2; } }
+  return +(Math.round(best/0.05)*0.05).toFixed(2);
+}
+// rid/k: si vienen, el cambio es solo para esa cara de ese rack
+function agregarNivel(key, rid, k){
+  ensureEditable(); commit(); const kk = rid ? ownType(rid, key, k) : key; const T = L.tipos[kk]; if (!T) return;
+  const h = nuevoNivelH(T); T.niveles.push({h, k:'P'}); saved();
+  toast(`Larguero nuevo a +${fmt(h)} m. Tocá su cota o arrastralo para ubicarlo donde quieras.`);
+}
+function quitarNivel(key, i, rid, k){
+  ensureEditable(); const T0 = L.tipos[key]; if (!T0 || T0.niveles.length < 2){ toast('Cada módulo tiene que tener al menos un nivel.'); return; }
+  commit(); const kk = rid ? ownType(rid, key, k) : key; L.tipos[kk].niveles.splice(i,1); saved();
+}
+function usoNivel(key, i, v, rid, k){
+  ensureEditable(); commit(); const kk = rid ? ownType(rid, key, k) : key; const T = L.tipos[kk]; if (!T || !T.niveles[i]) return; T.niveles[i].k = v; saved();
 }
 function setNivel(key, i, campo, v){
   ensureEditable(); const T=L.tipos[key]; if (!T || !T.niveles[i]) return;
