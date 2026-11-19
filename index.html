@@ -338,7 +338,24 @@ function baseOpcionB(){
   return {id:'opb', nombre:'Opción 23-9-26 (esquemática)', base:true, nota:'Plano «Opción FINAL galpón Portal 23-9-26», dibujado sin escala: posiciones aproximadas. 630 posiciones.',
     params:{palletH:1.5, palletPiso:1.1, alero:10.5, flecha:1.8, portico:8.5, pasilloMin:3.2}, galpon:galpon(), tipos, racks};
 }
-const BASES = {sotic: baseSotic(), opb: baseOpcionB()};
+// Propuesta pedida el 19/11/2026: un larguero más a +1,60 m (estante) en las caras AY a BF.
+// Va solo en los módulos con estantes (tipo A); en los túneles no, porque taparía el paso.
+function basePropuesta160(){
+  const b = baseSotic();
+  b.id = 'prop160'; b.nombre = 'Propuesta — larguero 1,60 (AY a BF)';
+  b.nota = 'Instalado + un larguero a +1,60 m (estante de tablilla) en las caras AY, AZ, BA, BB, BC, BD, BE y BF. No va en los túneles de paso.';
+  b.tipos.A16 = {nombre:'Conjunto tipo A + larguero 1,60', tunel:null, niveles:[...clone(b.tipos.A.niveles), {h:1.6, k:'E'}]};
+  const caras = ['AY','AZ','BA','BB','BC','BD','BE','BF'];
+  for (const r of b.racks) (r.caras||[]).forEach((c,k)=>{
+    if (!caras.includes(c)) return;
+    for (const m of r.mods) if ((k===1 && m.t2 ? m.t2 : m.t) === 'A'){
+      if (k===1) m.t2 = 'A16'; else { if (r.doble && m.t2===undefined) m.t2 = m.t; m.t = 'A16'; }
+      if (m.t2 === m.t) delete m.t2;
+    }
+  });
+  return b;
+}
+const BASES = {sotic: baseSotic(), prop160: basePropuesta160(), opb: baseOpcionB()};
 
 /* ================= Estado ================= */
 let store = {versions:[], cur:'sotic', tab:'planta'};
@@ -1234,7 +1251,7 @@ function fillVersions(){
 $('#selVer').onchange = e => setLayout(e.target.value);
 function dupLayout(){
   const c = clone(L); c.id = 'v' + Date.now().toString(36); c.base = false; delete c.nota;
-  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${L.id==='sotic'?'instalado':'opción 23-9'})` : L.nombre + ' (copia)';
+  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${({sotic:'instalado', prop160:'propuesta 1,60', opb:'opción 23-9'})[L.id]||L.id})` : L.nombre + ' (copia)';
   store.versions.push(c); setLayout(c.id);
 }
 $('#bDup').onclick = dupLayout;
