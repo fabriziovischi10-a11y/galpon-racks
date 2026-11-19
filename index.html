@@ -163,6 +163,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--sel-soft)} tr.selr t
 .rlv-i{border:1px solid var(--line);border-radius:6px;padding:3px 4px}
 .btn.mini{padding:2px 8px;font-size:13px}
 .rlv-i select{padding:3px 4px;font-size:12px}
+.rlv-i input.ph{width:62px}
 .cota-ed input{width:90px}
 .e-drag{fill:var(--sel)!important}
 .e-dragt{font-family:var(--f-mono);font-weight:600;fill:var(--sel);paint-order:stroke;stroke:var(--paper);stroke-width:.12}
@@ -338,13 +339,15 @@ function baseOpcionB(){
   return {id:'opb', nombre:'Opción 23-9-26 (esquemática)', base:true, nota:'Plano «Opción FINAL galpón Portal 23-9-26», dibujado sin escala: posiciones aproximadas. 630 posiciones.',
     params:{palletH:1.5, palletPiso:1.1, alero:10.5, flecha:1.8, portico:8.5, pasilloMin:3.2}, galpon:galpon(), tipos, racks};
 }
-// Propuesta pedida el 19/11/2026: un larguero más a +1,60 m (estante) en las caras AY a BF.
+// Propuesta pedida el 19/11/2026 para las caras AY a BF (empezó como un estante a +1,60 m).
 // Va solo en los módulos con estantes (tipo A); en los túneles no, porque taparía el paso.
 function basePropuesta160(){
   const b = baseSotic();
-  b.id = 'prop160'; b.nombre = 'Propuesta — larguero 1,60 (AY a BF)';
-  b.nota = 'Instalado + un larguero a +1,60 m (estante de tablilla) en las caras AY, AZ, BA, BB, BC, BD, BE y BF. No va en los túneles de paso.';
-  b.tipos.A16 = {nombre:'Conjunto tipo A + larguero 1,60', tunel:null, niveles:[...clone(b.tipos.A.niveles), {h:1.6, k:'E'}]};
+  // 19/11/2026 (cambio): pallets de 1,10 m en vez de estantes → largueros a 1,30 · 2,60 · 3,90 (1,30 m entre cada uno)
+  b.id = 'prop160'; b.nombre = 'Propuesta — pallets de 1,10 (AY a BF)';
+  b.nota = 'Instalado con las caras AY, AZ, BA, BB, BC, BD, BE y BF para pallets de 1,10 m: largueros a 1,30 · 2,60 · 3,90 con pallets (en lugar de estantes), y arriba 5,25 y 7,55 como estaban. Los túneles de paso no cambian.';
+  b.tipos.A16 = {nombre:'Tipo A con pallets de 1,10', tunel:null, niveles:[
+    {h:0, k:'P', ph:1.1}, {h:1.3, k:'P', ph:1.1}, {h:2.6, k:'P', ph:1.1}, {h:3.9, k:'P', ph:1.1}, {h:5.25, k:'P'}, {h:7.55, k:'P'}]};
   const caras = ['AY','AZ','BA','BB','BC','BD','BE','BF'];
   for (const r of b.racks) (r.caras||[]).forEach((c,k)=>{
     if (!caras.includes(c)) return;
@@ -400,6 +403,8 @@ const sidesOf = r => r.doble ? [0, D+G] : [0];
 function modStarts(r){ const a=[]; let s=F; for (const m of r.mods){ a.push(s); s += m.w + F; } return a; }
 const palPer = m => m.w >= 1.9 ? 2 : 1;
 const tipo = t => L.tipos[t] || {nombre:t, tunel:null, niveles:[]};
+// Alto de la carga de un nivel: el propio del nivel (l.ph) o el general (pallet de piso / pallet de altura)
+const altoCarga = l => (l && l.ph) || (l && l.h===0 ? (L.params.palletPiso||L.params.palletH) : L.params.palletH);
 // Tipo de un módulo en una cara: la cara 1 (Oeste) puede tener su propio tipo (m.t2); si no, usa el mismo que la cara 0
 const modT = (m, k=0) => (k===1 && m.t2) ? m.t2 : m.t;
 function setModT(m, k, key, doble=true){
@@ -498,13 +503,13 @@ function avisos(){
     if (!L.racks.some(r=>usaTipo(r,key))) continue;
     const lv = [...T.niveles].sort((a,b)=>a.h-b.h);
     for (let i=0;i<lv.length-1;i++){
-      const ph = lv[i].h===0 ? (p.palletPiso||p.palletH) : p.palletH;
+      const ph = altoCarga(lv[i]);
       const need = lv[i].k==='P' ? ph + 0.12 + 0.08 : 0.30;
       if (lv[i+1].h - lv[i].h < need - 1e-6) A.push({lvl:'warn', t:`Tipo «${T.nombre}»: entre ${fmt(lv[i].h)} y ${fmt(lv[i+1].h)} m hay ${fmt(lv[i+1].h-lv[i].h)} m; un pallet de ${fmt(ph)} m necesita ${fmt(need)} m.`});
     }
     if (T.tunel && lv.length && lv[0].h < 2.4) A.push({lvl:'warn', t:`Tipo «${T.nombre}»: el paso libre bajo el primer nivel es de ${fmt(lv[0].h-0.12)} m.`});
     const top = lv.length ? lv[lv.length-1] : null;
-    if (top && top.k==='P' && top.h + p.palletH > p.alero - 0.3) A.push({lvl:'warn', t:`Tipo «${T.nombre}»: el pallet superior llega a ${fmt(top.h+p.palletH)} m; el alero está a ${fmt(p.alero)} m.`});
+    if (top && top.k==='P' && top.h + altoCarga(top) > p.alero - 0.3) A.push({lvl:'warn', t:`Tipo «${T.nombre}»: el pallet superior llega a ${fmt(top.h+altoCarga(top))} m; el alero está a ${fmt(p.alero)} m.`});
   }
   return A;
 }
@@ -790,7 +795,7 @@ function elevModuleSVG(s0, m, T, sx, opts={}){ // dibuja un módulo en coordenad
     if (l.k === 'P' && opts.pallets !== false){ const k = palPer(m), pw = Math.min(1.0,(m.w-0.1)/k);
       for (let q=0;q<k;q++){ const c = x0 + m.w*(q+0.5)/k, a = c-pw/2;
         s += `<rect class="e-wood" x="${a}" y="${-l.h-0.15}" width="${pw}" height="0.15"/>`;
-        const ph = l.h===0 ? (p.palletPiso||p.palletH) : p.palletH;
+        const ph = altoCarga(l);
         s += `<rect class="e-load" x="${a+0.02}" y="${-l.h-ph}" width="${pw-0.04}" height="${ph-0.15}"/>`; } }
   }
   if (T.tunel){ const c=(x0+x1)/2, y=-0.9; const col = T.tunel==='pasillo'?'var(--red)':'var(--green)';
@@ -822,7 +827,7 @@ function levelChain(key, x, size=0.26, rid='', k=0){
 }
 function typeCardSVG(key){
   const T = L.tipos[key], p = L.params, m = {t:key, w:2.3}, lv = [...T.niveles].sort((a,b)=>a.h-b.h);
-  const top = Math.max(p.portico, ...lv.map(l=>l.h + (l.k==='P'?p.palletH:0.3))) + 0.4;
+  const top = Math.max(p.portico, ...lv.map(l=>l.h + (l.k==='P'?altoCarga(l):0.3))) + 0.4;
   let s = `<rect class="e-ground" x="-1.9" y="0" width="${2.3+2*F+2.4}" height="0.15"/>`;
   s += upright(0, p.portico) + upright(F+2.3, p.portico) + elevModuleSVG(F, m, T);
   s += levelChain(key, -0.45);
@@ -833,7 +838,7 @@ function typeCardSVG(key){
 }
 function rackElevationSVG(r, k=0){
   const p=L.params, st=modStarts(r), Lr=runLen(r), sc=34;
-  const top = Math.max(p.portico, ...r.mods.flatMap(m=>tipo(modT(m,k)).niveles.map(l=>l.h+(l.k==='P'?p.palletH:0.3)))) + 0.5;
+  const top = Math.max(p.portico, ...r.mods.flatMap(m=>tipo(modT(m,k)).niveles.map(l=>l.h+(l.k==='P'?altoCarga(l):0.3)))) + 0.5;
   let s = `<rect class="e-ground" x="-1.2" y="0" width="${Lr+2.4}" height="0.15"/>`;
   for (let f=0; f<=r.mods.length; f++) s += upright(f===0?0:st[f-1]+r.mods[f-1].w, p.portico);
   r.mods.forEach((m,i)=>{ const key = modT(m,k); s += elevModuleSVG(st[i], m, tipo(key), 0, {rid:r.id, k, key});
@@ -865,7 +870,7 @@ function sectionSVG(r){
       // frente del rack visto en el corte: posición y = q.y + dir*s
       for (let f=0; f<=q.mods.length; f++){ const sf = f===0?0:st[f-1]+q.mods[f-1].w; const y = q.y + dir*sf; s += upright(dir>0?y:y-F, p.portico); }
       q.mods.forEach((m,i)=>{ const y0 = q.y + dir*st[i]; const xx = dir>0 ? y0 : y0 - m.w; s += elevModuleSVG(xx, m, tipo(m.t), 0, {rid:q.id});
-        for (const l of tipo(m.t).niveles) maxTop = Math.max(maxTop, l.h + (l.k==='P'?p.palletH:0)); });
+        for (const l of tipo(m.t).niveles) maxTop = Math.max(maxTop, l.h + (l.k==='P'?altoCarga(l):0)); });
       const lbl = q.y + dir*Lr/2; s += `<text class="s-lbl" font-size="0.5" text-anchor="middle" x="${lbl}" y="0.8">${esc(q.id)}</text>`;
       s += hdimSVG(Math.min(q.y, q.y+dir*Lr), Math.max(q.y, q.y+dir*Lr), -1.25, `${fmt(Lr)}`, 0.3);
     } else if (Math.abs(a)<1 || Math.abs(a-180)<1){
@@ -874,7 +879,7 @@ function sectionSVG(r){
       for (const sd of sidesOf(q)){ const y0 = q.y + dir*sd, y1 = q.y + dir*(sd+D); const lo=Math.min(y0,y1);
         s += upright(lo, p.portico) + upright(lo+D-F, p.portico);
         for (const l of T.niveles){ if (l.h>0) s += `<rect class="e-beam" x="${lo}" y="${-l.h}" width="${D}" height="0.12"/>`;
-          if (l.k==='P'){ s += `<rect class="e-wood" x="${lo-0.05}" y="${-l.h-0.15}" width="1.2" height="0.15"/><rect class="e-load" x="${lo-0.03}" y="${-l.h-p.palletH}" width="1.16" height="${p.palletH-0.15}"/>`; maxTop=Math.max(maxTop,l.h+p.palletH); }
+          if (l.k==='P'){ s += `<rect class="e-wood" x="${lo-0.05}" y="${-l.h-0.15}" width="1.2" height="0.15"/><rect class="e-load" x="${lo-0.03}" y="${-l.h-altoCarga(l)}" width="1.16" height="${altoCarga(l)-0.15}"/>`; maxTop=Math.max(maxTop,l.h+altoCarga(l)); }
           if (l.k==='E') s += `<rect class="e-deck" x="${lo}" y="${-l.h-0.03}" width="${D}" height="0.03"/>`; }
         // diagonales del bastidor
         let zig=''; for (let z=0.3, k=0; z<p.portico-0.3; z+=0.9, k++) zig += `${k?'L':'M'}${(k%2?lo+D-F/2:lo+F/2).toFixed(3)} ${(-z).toFixed(3)} `;
@@ -909,6 +914,7 @@ function drawAlzados(){
         h += `<div class="rlv-t"><div><b>${esc(k)}</b> <span class="muted">${esc(T.nombre)} · ${n} mód.</span></div><div class="row">`+
           T.niveles.map((l,i)=>({...l,i})).sort((a,b)=>a.h-b.h).map(l=>`<span class="rlv-i">${l.h===0?'<span>Piso</span>':''}<input type="number" step="0.05" min="0" value="${l.h}" data-lr="${esc(q.id)}" data-lk="${kf}" data-lt="${esc(k)}" data-li="${l.i}" ${l.h===0?'disabled':''} aria-label="Altura en metros"><span>m</span>`+
             `<select data-nk="${l.i}" data-nt="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}" aria-label="Uso del nivel"><option value="P" ${l.k==='P'?'selected':''}>Pallet</option><option value="E" ${l.k==='E'?'selected':''}>Estante</option></select>`+
+            (l.k==='P' ? `<span title="Alto del pallet cargado en este nivel">alto</span><input type="number" class="ph" step="0.05" min="0.3" value="${+altoCarga(l).toFixed(3)}" data-nph="${l.i}" data-nt="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}" aria-label="Alto del pallet en metros">` : '')+
             `<button class="btn danger mini" data-ndel="${l.i}" data-nt="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}" title="Quitar este larguero" aria-label="Quitar larguero">×</button></span>`).join('')+
           `<button class="btn mini" data-nadd="${esc(k)}" data-nr="${esc(q.id)}" data-nf="${kf}">+ Larguero</button></div></div>`; }
       h += `</div></div>`;
@@ -940,6 +946,8 @@ function drawAlzados(){
   el.querySelectorAll('[data-nadd]').forEach(b=>b.onclick=()=>agregarNivel(b.dataset.nadd, b.dataset.nr, +b.dataset.nf));
   el.querySelectorAll('[data-ndel]').forEach(b=>b.onclick=()=>quitarNivel(b.dataset.nt, +b.dataset.ndel, b.dataset.nr, +b.dataset.nf));
   el.querySelectorAll('select[data-nk]').forEach(s=>s.onchange=()=>usoNivel(s.dataset.nt, +s.dataset.nk, s.value, s.dataset.nr, +s.dataset.nf));
+  el.querySelectorAll('input[data-nph]').forEach(i=>i.onchange=()=>{ const v=parseFloat(String(i.value).replace(',','.')); if (isNaN(v)||v<0.3) return;
+    altoNivel(i.dataset.nt, +i.dataset.nph, v, i.dataset.nr, i.dataset.nr ? +i.dataset.nf : 0); });
   if (!ed) return;
   const nt = $('#bNewType'); if (nt) nt.onclick = () => { commit(); let n=1; while (L.tipos['N'+n]) n++; const src = L.tipos.S || L.tipos.B || Object.values(L.tipos)[0]; L.tipos['N'+n] = {...clone(src), nombre:'Nuevo tipo '+n, tunel:null}; saved(); };
 }
@@ -986,6 +994,10 @@ function quitarNivel(key, i, rid, k){
 }
 function usoNivel(key, i, v, rid, k){
   ensureEditable(); commit(); const kk = rid ? ownType(rid, key, k) : key; const T = L.tipos[kk]; if (!T || !T.niveles[i]) return; T.niveles[i].k = v; saved();
+}
+function altoNivel(key, i, v, rid, k){
+  ensureEditable(); commit(); const kk = rid ? ownType(rid, key, k) : key; const T = L.tipos[kk]; if (!T || !T.niveles[i]) return;
+  T.niveles[i].ph = +(+v).toFixed(3); saved();
 }
 function setNivel(key, i, campo, v){
   ensureEditable(); const T=L.tipos[key]; if (!T || !T.niveles[i]) return;
@@ -1153,7 +1165,7 @@ function build3D(){
           if (l.h > 0) for (const dd of [sd+0.03, sd+D-0.03]) add('beam', mats.beam, r, sc, dd, l.h-0.06, m.w, 0.05, 0.12, isSel ? 0x2f80ed : 0xe4571c, rid);
           if (l.k==='E') add('deck', mats.deck, r, sc, sd+D/2, l.h+0.01, m.w, D-0.04, 0.02, undefined, rid);
           if (l.k==='P'){ const k = palPer(m), pw = Math.min(1.0,(m.w-0.1)/k);
-            for (let q=0;q<k;q++){ if (rnd() > occ) continue; const c = s0 + m.w*(q+0.5)/k, hh = (l.h===0 ? (p.palletPiso||p.palletH) : p.palletH)*(0.75+0.25*rnd());
+            for (let q=0;q<k;q++){ if (rnd() > occ) continue; const c = s0 + m.w*(q+0.5)/k, hh = altoCarga(l)*(0.75+0.25*rnd());
               add('wood', mats.wood, r, c, sd+D/2, l.h+0.075, pw, 1.2, 0.15, undefined, rid);
               add('load', mats.load, r, c, sd+D/2, l.h+0.15+(hh-0.15)/2, pw-0.04, 1.14, hh-0.15, loadCols[Math.floor(rnd()*loadCols.length)], rid); } }
         }
@@ -1251,7 +1263,7 @@ function fillVersions(){
 $('#selVer').onchange = e => setLayout(e.target.value);
 function dupLayout(){
   const c = clone(L); c.id = 'v' + Date.now().toString(36); c.base = false; delete c.nota;
-  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${({sotic:'instalado', prop160:'propuesta 1,60', opb:'opción 23-9'})[L.id]||L.id})` : L.nombre + ' (copia)';
+  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${({sotic:'instalado', prop160:'propuesta pallets 1,10', opb:'opción 23-9'})[L.id]||L.id})` : L.nombre + ' (copia)';
   store.versions.push(c); setLayout(c.id);
 }
 $('#bDup').onclick = dupLayout;
