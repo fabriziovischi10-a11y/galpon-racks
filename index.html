@@ -343,20 +343,20 @@ function baseOpcionB(){
 // Va solo en los módulos con estantes (tipo A); en los túneles no, porque taparía el paso.
 function basePropuesta160(){
   const b = baseSotic();
-  // 19/11/2026 (último pedido del usuario): estantes cada 1,10 m (1,10 · 2,20 · 3,30) en AX, AZ, BA, BB, BC, BD, BE, BF y BG (AY no).
-  // En el piso siguen pallets, de hasta 0,90 m para que entren bajo el estante de 1,10.
-  b.id = 'prop160'; b.nombre = 'Propuesta — estantes cada 1,10';
-  b.nota = 'Instalado con las caras AX, AZ, BA, BB, BC, BD, BE, BF y BG con estantes cada 1,10 m (1,10 · 2,20 · 3,30); en el piso, pallets de hasta 0,90 m de alto; arriba 5,25 y 7,55 con pallets como estaban. AY y los túneles de paso no cambian.';
-  b.tipos.A16 = {nombre:'Tipo A con estantes cada 1,10', tunel:null, niveles:[
-    {h:0, k:'P', ph:0.9}, {h:1.1, k:'E'}, {h:2.2, k:'E'}, {h:3.3, k:'E'}, {h:5.25, k:'P'}, {h:7.55, k:'P'}]};
-  const caras = ['AX','AZ','BA','BB','BC','BD','BE','BF','BG'];
-  for (const r of b.racks) (r.caras||[]).forEach((c,k)=>{
-    if (!caras.includes(c)) return;
-    for (const m of r.mods) if ((k===1 && m.t2 ? m.t2 : m.t) === 'A'){
-      if (k===1) m.t2 = 'A16'; else { if (r.doble && m.t2===undefined) m.t2 = m.t; m.t = 'A16'; }
-      if (m.t2 === m.t) delete m.t2;
-    }
-  });
+  // 20/11/2026 (pedido del usuario): TODAS las caras como la cara AX que armó él, menos BQ (muro Sur), que queda como está.
+  //   Módulos comunes: piso pallet · 1,10 pallet · 2,20 estante · 3,30 · 5,20 · 6,80 pallets
+  //   Túneles de paso:  2,05 · 3,65 · 5,25 · 6,85 pallets
+  // Los altos de carga (ph) los ajusté para que el pallet entre entre largueros (larguero 0,12 + margen 0,08).
+  b.id = 'prop160'; b.nombre = 'Propuesta — todas las caras como AX (menos BQ)';
+  b.nota = 'Todas las caras con la configuración de AX, menos BQ (muro Sur), que queda como está instalada. Módulos comunes: pallets en piso y 1,10 · estante 2,20 · pallets 3,30 · 5,20 · 6,80. Túneles de paso: 2,05 · 3,65 · 5,25 · 6,85.';
+  b.tipos.AX = {nombre:'Como AX (común)', tunel:null, niveles:[
+    {h:0, k:'P', ph:0.9}, {h:1.1, k:'P', ph:0.9}, {h:2.2, k:'E'}, {h:3.3, k:'P'}, {h:5.2, k:'P', ph:1.4}, {h:6.8, k:'P'}]};
+  b.tipos.TAX = {nombre:'Como AX (túnel de paso)', tunel:'pasillo', niveles:[
+    {h:2.05, k:'P', ph:1.4}, {h:3.65, k:'P', ph:1.4}, {h:5.25, k:'P', ph:1.4}, {h:6.85, k:'P'}]};
+  for (const r of b.racks){
+    if ((r.caras||[]).includes('BQ')) continue;   // BQ no se toca
+    for (const m of r.mods){ m.t = b.tipos[m.t] && b.tipos[m.t].tunel ? 'TAX' : 'AX'; delete m.t2; }
+  }
   return b;
 }
 const BASES = {sotic: baseSotic(), prop160: basePropuesta160(), opb: baseOpcionB()};
@@ -1264,7 +1264,7 @@ function fillVersions(){
 $('#selVer').onchange = e => setLayout(e.target.value);
 function dupLayout(){
   const c = clone(L); c.id = 'v' + Date.now().toString(36); c.base = false; delete c.nota;
-  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${({sotic:'instalado', prop160:'propuesta estantes 1,10', opb:'opción 23-9'})[L.id]||L.id})` : L.nombre + ' (copia)';
+  c.nombre = L.base ? `Modificación ${store.versions.length+1} (desde ${({sotic:'instalado', prop160:'propuesta como AX', opb:'opción 23-9'})[L.id]||L.id})` : L.nombre + ' (copia)';
   store.versions.push(c); setLayout(c.id);
 }
 $('#bDup').onclick = dupLayout;
